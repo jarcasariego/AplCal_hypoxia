@@ -1,0 +1,1385 @@
+---
+title: "*A.californica* transcriptome analysis"
+author: Javier A. Rodriguez Casariego
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+# Setup
+
+```{r setup, include = TRUE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+knitr::opts_knit$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia/TagSeq/')
+```
+
+```{r load_libraries, include = TRUE}
+# Load libraries
+library(DESeq2)    # BiocManager::install('DESeq2')
+library(limma)     # BiocManager::install('limma')
+library(stringr)
+library(readxl)
+library(pheatmap)
+library(RColorBrewer)
+library(variancePartition)  # BiocManager::install('variancePartition')
+library(doParallel)
+library(cowplot)
+source("analyses/GO_MWU/gomwu.functions.R")
+library(tidyverse)
+library(KOGMWU)  # install.packages("KOGMWU")
+library(adegenet)
+library(ggpubr)
+library(kableExtra)
+library(tidyverse)
+library(KOGMWU)  # install.packages("KOGMWU")
+library(adegenet)
+library(ggpubr)
+library(kableExtra)
+library(ggfortify) # install.packages("ggfortify")
+library(Biobase)
+library(arrayQualityMetrics)
+library(vegan)
+
+## ggplot theme
+theme_custom <- function() {
+  theme_bw(base_size = 10) %+replace%    #, base_family = "Arial"
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(), 
+      panel.background = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA),
+      legend.background = element_rect(fill = NA, colour = NA),
+      axis.text.x = element_text(angle=45, hjust=1, vjust = 1)
+    )
+}
+## ggplot labeller
+colnames <- c(
+  `A` = "abdominal",
+  `Pp` = "pleural & pedal"
+)
+
+parents <- c(
+  `60` = "lab-reared",
+  `71` = "wild"
+)
+
+global_labeller <- labeller(
+  tissue = colnames,
+  batch = parents,
+  .default = "label_parsed"
+)
+```
+
+# Load data
+
+#### Gene count data
+```{r import_counts}
+#name <- gsub( "(?:[^_]+_){4}([^_ ]+)*$","", files)
+  
+  # STAR quantMode geneCounts output:
+  #column 1: gene ID
+  #column 2: counts for unstranded RNA-seq
+  #column 3: counts for the 1st read strand aligned with RNA (htseq-count option -s yes)
+  #column 4: counts for the 2nd read strand aligned with RNA (htseq-count option -s reverse)
+  
+sampleNames <- list.files(path = glue::glue(getwd(), "/data/GeneCounts"), pattern = "*.ReadsPerGene.out.tab") %>%
+    stringr::str_split_fixed("_", n = 4) %>%
+    tibble::as_tibble() %>%
+    dplyr::mutate(Name = V1) %>%
+    dplyr::select(Name) %>% 
+    purrr::flatten_chr()
+  
+geneIDs <- list.files(path = glue::glue(getwd(), "/data/GeneCounts"), pattern = "*.ReadsPerGene.out.tab", full.names = T)[1] %>% 
+    data.table::fread(select = 1) %>%
+    purrr::flatten_chr()
+  
+countMatrix <- list.files(path = glue::glue(getwd(), "/data/GeneCounts"), pattern = "*.ReadsPerGene.out.tab", full.names = T) %>%
+    purrr::map_dfc(data.table::fread, select = 3, data.table = F) %>%
+    magrittr::set_colnames(sampleNames) %>% 
+    magrittr::set_rownames(geneIDs)
+  
+countMatrix <- countMatrix[-c(1:4),]
+```
+
+#### Sample metadata
+```{r sample_metadata}
+# Import sample metadata
+sdat0 <- read_csv("data/sample_metadata.csv") 
+sdat0$treatment <- gsub("C", "Control", sdat0$treatment)
+sdat0 <- sdat0 %>%  
+  mutate(tissue.group = interaction(tissue, treatment)) %>%
+  mutate_if(is.character, as.factor)
+
+sdat <- sdat0 %>%
+  arrange(sample_ID) %>%                              # order rows by sample name
+  column_to_rownames(var = "sample_ID")               # set sample name to rownames
+
+#sdat$treatment <- factor(sdat$treatment, levels = c("Control","Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Recovery"), ordered = T)
+#sdat$group <- paste(sdat$treatment, sdat$batch, sdat$tissue, sep = "")
+```
+
+#### Gene annotations
+```{r import_annot}
+#trinotate <- readxl::read_xlsx("../data/genome/Mcavernosa_trinotate_annotation_report.xlsx",
+ #                               sheet = "Mcavernosa_trinotate_annotation")
+```
+
+### Create DESeqDataSet
+```{r subset_dds}
+# Create full DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = countMatrix,
+                              colData = sdat,
+                              design = ~ tissue)
+### Remove genes counted zero times
+dds <- dds[ rowSums(counts(dds)) > 0, ]
+
+# Subset DESeqDataSet
+## Subset for batch and ganglia
+dds_60 <- dds[, colData(dds)$batch == 60] 
+dds_60A <- dds_60[, colData(dds_60)$tissue == "A"]
+dds_60Pp <- dds_60[, colData(dds_60)$tissue == "Pp"]
+
+dds_71 <- dds[, colData(dds)$batch == 71] 
+dds_71A <- dds_71[, colData(dds_71)$tissue == "A"]
+dds_71Pp <- dds_71[, colData(dds_71)$tissue == "Pp"]
+
+### Remove genes counted zero times in subset
+dds_60 <- dds_60[ rowSums(counts(dds_60)) > 0, ]
+dds_60A <- dds_60A[ rowSums(counts(dds_60A)) > 0, ]
+dds_60Pp <- dds_60Pp[ rowSums(counts(dds_60Pp)) > 0, ]
+
+dds_71 <- dds_71[ rowSums(counts(dds_71)) > 0, ]
+dds_71A <- dds_71A[ rowSums(counts(dds_71A)) > 0, ]
+dds_71Pp <- dds_71Pp[ rowSums(counts(dds_71Pp)) > 0, ]
+
+dds_A <- dds[, colData(dds)$tissue == "A"] 
+dds_Pp <- dds[, colData(dds)$tissue == "Pp"] 
+
+### Drop unused factor levels
+colData(dds_60A) <- droplevels(colData(dds_60A))
+colData(dds_60Pp) <- droplevels(colData(dds_60Pp))
+
+colData(dds_71A) <- droplevels(colData(dds_71A))
+colData(dds_71Pp) <- droplevels(colData(dds_71Pp))
+
+colData(dds_A) <- droplevels(colData(dds_A))
+colData(dds_Pp) <- droplevels(colData(dds_Pp))
+```
+
+### Summarize count data
+```{r summarize_counts, fig.height = 4, fig.width = 10}
+# Read in count totals of raw, postQC, and mapped reads
+count_summ <- read.table("data/count_totals.txt") %>%
+  mutate(sample_ID = str_sub(V1, 1, 7),
+         raw = V2, post_qc = V3, mapped = V4) %>%
+  select(sample_ID, raw, post_qc, mapped) %>%
+  gather(stage, count, -sample_ID) 
+
+# Summarize counts for only samples included in paper (sampled 2017-10-28)
+counttable <- sdat0 %>%
+  left_join(count_summ) %>%
+  group_by(stage) %>%
+  summarize(`Min. (per sample)` = min(count),
+            `Max. (per sample)` = max(count),
+            `Median (per sample)` = median(count),
+            Total = sum(count)) %>%
+  mutate_if(is_numeric, ~ format(ceiling(.), big.mark = ",")) %>%
+  arrange(rev(stage))
+ 
+counttable <- counttable[-1,]
+counttable %>%
+   knitr::kable(caption = "Total read counts")
+
+# Number of samples
+nsamples <- ncol(counts(dds))
+
+# Number of reads per sample
+rps <- qplot(colSums(counts(dds))) +
+  labs(x = "Mapped reads per sample", y = "Number of samples",
+       title = "Mapped reads per sample") +
+  geom_label(aes(x = 6e5, y = 13, label = paste(nsamples, "samples")))
+
+# Number of genes
+ngenes <- nrow(counts(dds))
+# Number of reads per gene
+rpg <- qplot(log10(rowSums(counts(dds))), bins = 16) +
+  labs(x = "log10(Mapped reads per gene)", y = "Number of genes",
+       title = "Mapped reads per gene") +
+  geom_label(aes(x = 4, y = 1500, label = paste(ngenes, "genes")))
+
+countfig <- plot_grid(rps, rpg)
+
+countfig
+
+# Save table and fig to include in supplemental information
+write_csv(counttable, path = "output/readcounttable.csv")
+ggsave(countfig, filename = "figures/FigS1_TagSeq_seq_Stats.png", device = "png", width = 150, height = 85, units = "mm")
+```
+
+#### Filter and transform count data
+```{r prefilter_dds}
+
+# Remove genes with less than 1 mean count across samples
+dds <- dds[ rowMeans(counts(dds)) > 1, ]
+dds_60 <- dds_60[ rowMeans(counts(dds_60)) > 1, ]
+dds_60A <- dds_60A[ rowMeans(counts(dds_60A)) > 1, ]
+dds_60Pp <- dds_60Pp[ rowMeans(counts(dds_60Pp)) > 1, ]
+
+dds_71 <- dds_71[ rowMeans(counts(dds_71)) > 1, ]
+dds_71A <- dds_71A[ rowMeans(counts(dds_71A)) > 1, ]
+dds_71Pp <- dds_71Pp[ rowMeans(counts(dds_71Pp)) > 1, ]
+
+dds_A <- dds_A[ rowMeans(counts(dds_A)) > 1, ]
+dds_Pp <- dds_Pp[ rowMeans(counts(dds_Pp)) > 1, ]
+
+# Normalize expression data for visualization purposes using VST tranformation
+vsd <- vst(dds, blind = TRUE)
+vsd_60 <- vst(dds_60, blind = TRUE)
+vsd_60A <- vst(dds_60A, blind = TRUE)
+vsd_60Pp <- vst(dds_60Pp, blind = TRUE)
+
+vsd_71 <- vst(dds_71, blind = TRUE)
+vsd_71A <- vst(dds_71A, blind = TRUE)
+vsd_71Pp <- vst(dds_71Pp, blind = TRUE)
+
+vsd_A <- vst(dds_A, blind = TRUE)
+vsd_Pp <- vst(dds_Pp, blind = TRUE)
+```
+
+# Visualize transcriptome
+
+### Principal Coordinates Analysis
+
+```{r pcoa, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd)) %>% 
+  cbind(cmdscale(sampleDistMatrix)) %>%
+  mutate(fillcol = factor(ifelse(tissue == "A", NA, tissue))) %>% 
+  mutate(alphaval = ifelse(batch == 60, 1, 0))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(tissue, batch, treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment, shape = tissue)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2),
+               lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2, fill = treatment, alpha = as.character(alphaval))) +
+  geom_point(size = 2, aes(x = c1, y = c2), fill = ifelse(mds$alphaval, "white", NA)) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`, fill = treatment, alpha = as.character(alphaval)), show.legend = F) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`), fill = ifelse(mds$alphaval, "white", NA), show.legend = F) +
+  scale_shape_manual(values = c(21, 24), name = "ganglia", labels = c("abdominal", "pleural & pedal")) +
+  scale_alpha_manual(values = c(1, 0), name = "batch", labels = c("lab_reared parents", "wild parents")) +
+  guides(shape = guide_legend(order = 2, override.aes = list(fill = "black"))) +
+  guides(alpha = guide_legend(override.aes = list(shape = 21, alpha = 1, fill = c("black", "white")))) +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing.y = unit(0, "cm"))
+
+pcoa
+
+ggsave(filename = "figures/Fig1.pcoa_GE.png",pcoa, width = 160, height = 110, units = "mm")
+```
+
+The PCoA shows that global gene expression varies significantly by batch along PC1 and by ganglia along PC2.In order to see clear treatment effects I will perform PCoAs for each batch and ganglia
+
+```{r pcoa 60, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd_60)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd_60)) %>% 
+  cbind(cmdscale(sampleDistMatrix)) %>%
+  mutate(fillcol = factor(ifelse(tissue == "A", NA, tissue)))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(tissue, treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment, shape = tissue)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
+  scale_shape_discrete(name = "ganglia", labels = c("abdominal", "pleural & pedal")) +
+  scale_color_discrete(name = "treatment") +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  guides(fill=guide_legend(ncol=2)) 
+
+pcoa
+
+ggsave(filename = "figures/Fig.pcoa_batch60_GE.png",pcoa, width = 160, height = 110, units = "mm")
+
+```
+
+```{r pcoa 71, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd_71)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd_71)) %>% 
+  cbind(cmdscale(sampleDistMatrix)) %>%
+  mutate(fillcol = factor(ifelse(tissue == "A", NA, tissue)))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(tissue, treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment, shape = tissue)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
+  scale_shape_discrete(name = "ganglia", labels = c("abdominal", "pleural & pedal")) +
+  scale_color_discrete(name = "treatment") +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  guides(fill=guide_legend(ncol=2)) 
+
+pcoa
+
+ggsave(filename = "figures/Fig.pcoa_batch71_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+
+```{r pcoa Abdominal, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd_A)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd_A)) %>% 
+  cbind(cmdscale(sampleDistMatrix)) %>%
+  mutate(btch = factor(batch))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(batch, treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment, shape = btch)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
+  scale_shape_discrete(name = "batch", labels = c("lab_reared parents", "wild parents")) +
+  scale_color_discrete(name = "treatment") +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  guides(fill=guide_legend(ncol=2)) 
+
+pcoa
+
+ggsave(filename = "figures/Fig.pcoa_Abdominal_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+
+```{r pcoa Pleural & Pedal, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd_Pp)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd_Pp)) %>% 
+  cbind(cmdscale(sampleDistMatrix)) %>%
+  mutate(btch = factor(batch))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(batch, treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment, shape = btch)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
+  scale_shape_discrete(name = "batch", labels = c("lab_reared parents", "wild parents")) +
+  scale_color_discrete(name = "treatment") +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  guides(fill=guide_legend(ncol=2)) 
+
+pcoa
+
+ggsave(filename = "figures/Fig.pcoa_PlePedal_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+
+```{r pcoa batch 60 Abdominal, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd_60A)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd_60A)) %>% 
+  cbind(cmdscale(sampleDistMatrix))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
+  scale_color_discrete(name = "treatment") +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  guides(fill=guide_legend(ncol=2)) 
+
+pcoa
+
+ggsave(filename = "figures/Fig.pcoa_60A_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+
+```{r pcoa batch 60 PlePedal, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd_60Pp)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd_60Pp)) %>% 
+  cbind(cmdscale(sampleDistMatrix))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
+  scale_color_discrete(name = "treatment") +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  guides(fill=guide_legend(ncol=2)) 
+
+pcoa
+
+ggsave(filename = "figures/Fig.pcoa_60Pp_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+
+```{r pcoa batch 71 Abdominal, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd_71A)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd_71A)) %>% 
+  cbind(cmdscale(sampleDistMatrix))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
+  scale_color_discrete(name = "treatment") +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  guides(fill=guide_legend(ncol=2)) 
+
+pcoa
+
+ggsave(filename = "figures/Fig.pcoa_71A_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+
+```{r pcoa batch 71 PlePedal, eval = TRUE}
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd_71Pp)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd_71Pp)) %>% 
+  cbind(cmdscale(sampleDistMatrix))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
+  scale_color_discrete(name = "treatment") +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  guides(fill=guide_legend(ncol=2)) 
+
+pcoa
+
+ggsave(filename = "figures/Fig.pcoa_71Pp_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+
+### Discriminant Analysis
+Discriminant Analysis of Principal Components (DAPC)
+```{r DAPC_71, eval = TRUE}
+
+set.seed(1234)
+# Discriminant function including all genes
+
+dat <- data.frame(assay(vsd_71)) 
+
+# How many PCs should be kept?
+dapc2 <- dapc(t(dat), colData(dds_71)$treatment, n.da=13, n.pca=100)
+temp <- optim.a.score(dapc2, n.sim = 50)
+my.dapc <- function(n.pca) dapc(t(dat), colData(dds_71)$treatment, n.pca = n.pca, n.da = 13)
+
+library(furrr)
+plan(multiprocess)
+my.dapc.res <- tibble(n.pca = 2:30) %>%
+  mutate(dapc = map(n.pca, my.dapc),
+         a.score = furrr::future_map(dapc, a.score, n.sim = 1000, seed = TRUE),
+          mean = map_dbl(a.score, ~ .$mean),
+          cumvar = map_dbl(dapc, ~ .$var))
+ 
+my.dapc.res %>%
+   arrange(-mean) %>%
+   head()
+
+# Retaining 8 PC's gives a high a-score (52%) and utilizes 63% of variance. 
+
+dp1 <- dapc(t(dat), colData(dds_71)$treatment,
+            n.pca = 7, n.da = 6)   # Retain 7 PCs and 6 discriminant functions
+varexpl <- round((dp1$eig/sum(dp1$eig))[1:2] * 100, 1)
+
+dapc <- tibble(sample = rownames(dp1$ind.coord),
+               grp = dp1$grp,
+               LD1 = dp1$ind.coord[,1],
+               LD2 = dp1$ind.coord[,2])
+dapc <- dapc %>%
+  group_by(grp) %>%
+  summarize(c1 = mean(LD1),
+            c2 = mean(LD2)) %>%
+  full_join(dapc)
+
+# Plot with spiders
+dapc.fig <- 
+  ggplot(dapc, aes(shape = factor(grepl("Pp", sample)), 
+                             fill = factor(grp, levels = c("Control","Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Recovery"), ordered = T))) +
+  geom_segment(mapping = aes(x = LD1, y = LD2, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(aes(x = c1, y = c2), size = 2) +
+  geom_point(aes(x = LD1, y = LD2), size = 1, show.legend = FALSE) +
+  scale_shape_manual(name = "ganglia", labels = c("Abdominal", "Pleural & Pedal"), values = c(21, 24)) +
+  scale_fill_discrete(name = "treatment") +
+  guides(fill = guide_legend(override.aes = list(shape = 21, size = 2))) +
+  guides(shape = guide_legend(override.aes = list(fill = "black", size = 2))) +
+  labs(x = paste0("LD1 [", varexpl[1],"%]"), y = paste0("LD2 [", varexpl[2],"%]")) +
+  theme_custom() 
+
+dapc.fig
+
+ggsave(filename = "figures/Fig.DAPC_71_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+
+```{r DAPC_60, eval = TRUE}
+
+set.seed(1234)
+# Discriminant function including all genes
+
+dat <- data.frame(assay(vsd_60)) 
+
+# How many PCs should be kept?
+dapc2 <- dapc(t(dat), colData(dds_60)$treatment, n.da=13, n.pca=100)
+temp <- optim.a.score(dapc2, n.sim = 50)
+my.dapc <- function(n.pca) dapc(t(dat), colData(dds_60)$treatment, n.pca = n.pca, n.da = 13)
+
+library(furrr)
+plan(multiprocess)
+my.dapc.res <- tibble(n.pca = 2:30) %>%
+  mutate(dapc = map(n.pca, my.dapc),
+         a.score = furrr::future_map(dapc, a.score, n.sim = 1000, seed = TRUE),
+          mean = map_dbl(a.score, ~ .$mean),
+          cumvar = map_dbl(dapc, ~ .$var))
+ 
+my.dapc.res %>%
+   arrange(-mean) %>%
+   head()
+
+# Retaining 8 PC's gives a high a-score (52%) and utilizes 63% of variance. 
+
+dp1 <- dapc(t(dat), colData(dds_60)$treatment,
+            n.pca = 7, n.da = 6)   # Retain 7 PCs and 6 discriminant functions
+varexpl <- round((dp1$eig/sum(dp1$eig))[1:2] * 100, 1)
+
+dapc <- tibble(sample = rownames(dp1$ind.coord),
+               grp = dp1$grp,
+               LD1 = dp1$ind.coord[,1],
+               LD2 = dp1$ind.coord[,2])
+dapc <- dapc %>%
+  group_by(grp) %>%
+  summarize(c1 = mean(LD1),
+            c2 = mean(LD2)) %>%
+  full_join(dapc)
+
+# Plot with spiders
+dapc.fig <- 
+  ggplot(dapc, aes(shape = factor(grepl("Pp", sample)), 
+                             fill = factor(grp, levels = c("Control","Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Recovery"), ordered = T))) +
+  geom_segment(mapping = aes(x = LD1, y = LD2, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(aes(x = c1, y = c2), size = 2) +
+  geom_point(aes(x = LD1, y = LD2), size = 1, show.legend = FALSE) +
+  scale_shape_manual(name = "ganglia", labels = c("Abdominal", "Pleural & Pedal"), values = c(21, 24)) +
+  scale_fill_discrete(name = "treatment") +
+  guides(fill = guide_legend(override.aes = list(shape = 21, size = 2))) +
+  guides(shape = guide_legend(override.aes = list(fill = "black", size = 2))) +
+  labs(x = paste0("LD1 [", varexpl[1],"%]"), y = paste0("LD2 [", varexpl[2],"%]")) +
+  theme_custom() 
+
+dapc.fig
+
+ggsave(filename = "figures/Fig.DAPC_60_GE.png",pcoa, width = 171, height = 110, units = "mm")
+
+```
+The DAPC shows that despite the significant variability among ganglia, the treatment groups can be discriminated well based on gene expression data and show a consistent response. This is true for both families (60 and 71). 
+
+# Differential expression analysis
+
+Since colonies appear to respond differently to symbiont type and heating, we should analyze differential expression in each colony separately to assess their unique responses. We can also analyze differential expression across all colonies together to see what responses are common to all three.
+
+### Run DESeq
+
+First, within each batch and tissue
+```{r run_DESeq_by tissue batch 60, warning=FALSE}
+# Run DESeq pipeline
+design(dds_60) <- formula(~ tissue.group)
+dsr1 <- DESeq(dds_60)
+
+# Define group contrasts
+group.contrasts <- tibble(num = c("Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Recovery",
+                                  "Hyp_T6h","Reox","Recovery","Reox","LtH_6","LtH_7"),
+                          den = c("Control","Control","Control","Control","Control","Control",
+                                  "Hyp_T2h","Hyp_T6h","Hyp_T6h","Recovery","Hyp_T6h","Hyp_T6h"))
+
+# Get DESeq results for all group contrasts for each colony
+DE <- crossing(tissue = c("A", "Pp"), group.contrasts) %>%
+  mutate(dsr = pmap(list(tissue, num, den), function(x, y, z) {
+    results(dsr1, contrast = c("tissue.group", paste0(x, ".", c(y, z))))}))
+```
+
+Then, for both tissues together
+```{r run_DESeq_together batch 60}
+# Run DESeq pipeline 
+design(dds_60) <- formula(~ tissue + treatment)
+dsr2 <- DESeq(dds_60)
+
+# Get DESeq results for all contrasts and join with results from each colony, from above
+DE <- crossing(tissue = "all", group.contrasts) %>%
+  mutate(dsr = map2(num, den, ~ results(dsr2, contrast = c("treatment", .x, .y)))) %>%
+  bind_rows(DE)
+```
+
+
+### Get significant DEGs
+```{r get_DEgenes}
+DE <- DE %>%
+  mutate(sig = map(dsr, ~ rownames_to_column(data.frame(.[which(.$padj < 0.1), ]), "gene")),
+          up = map(sig, ~ filter(., log2FoldChange > 0)),
+        down = map(sig, ~ filter(., log2FoldChange < 0))) 
+
+# Generate logP values for all differential expression contrasts
+DE <- DE %>% mutate(logP = map(dsr, ~ data.frame(
+  gene = rownames(data.frame(.)),
+  logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
+
+# Count number of differentially expressed genes within each colony, and overall, for each contrast
+DEtab <- DE %>%
+  filter((num == "Hyp_T2h" & den == "Control")|(num == "Hyp_T6h" & den == "Control")|
+         (num == "LtH_6" & den == "Control")|(num == "LtH_7" & den == "Control")|
+         (num == "Reox" & den == "Control")|(num == "Recovery" & den == "Control")|
+         (num == "Hyp_T6h" & den == "Hyp_T2h")|(num == "Reox" & den == "Hyp_T6h")|
+         (num == "Recovery" & den == "Hyp_T6h")|(num == "Reox" & den == "Recovery")|
+         (num == "LtH_6" & den == "Hyp_T6h")|(num == "LtH_7" & den == "Hyp_T6h")) %>%
+  mutate(nsig = map_dbl( sig, ~ nrow(.)),
+          nup = map_dbl(  up, ~ nrow(.)),
+          ndn = map_dbl(down, ~ nrow(.)),
+          `DEGs [up, down]` = paste0(nsig, " [", nup, ", ", ndn, "]")) %>%
+  mutate(ganglia = case_when(tissue == "A" ~ "abdominal", tissue == "Pp" ~ "pleural & pedal", 
+                           tissue == "all" ~ "all ganglia")) %>%
+  mutate(ganglia = factor(ganglia, levels = c("abdominal", "pleural & pedal", "all ganglia"))) %>%
+  select(ganglia, num, den, `DEGs [up, down]`) %>%
+  spread(ganglia, `DEGs [up, down]`)
+
+rownames(DEtab) <- paste(DEtab$num, DEtab$den, sep = " vs ")
+dek <- DEtab %>% select(3:5) %>%
+  knitr::kable(format = "markdown", caption = "Number of differentially expressed genes within individual genets and across all genets for each specified contrast. DEGs identified using DESeq with an adjusted p-value < 0.1. In brackets are the numbers of significantly up- and down-regulated genes.", row.names = )
+
+dek
+```
+
+
+### DEG Similarities
+Similarity of differentially expressed genes across tissue and contrasts
+
+##### DEGs in common across genets
+```{r DEgenes_comparison}
+# Find genes that are DE in same direction in multiple genets when analyzed individually
+DE %>%
+  unnest(sig) %>%
+  filter(tissue != "all") %>%
+  group_by(num, den) %>%
+  count(gene, log2FoldChange > 0) %>%   # In how many genets is same gene DE in same direction?
+  summarise(`shared` = sum(n==2)) %>%
+  knitr::kable(caption = "Number of differentially expressed genes in common")  %>%
+  kable_styling(full_width = TRUE)
+
+DEGs <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "all") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  select(.,contrast, gene)
+write_tsv(DEGs, path = "output/DEGs_by_contrast_batch 60_all_ganglia.tsv")
+
+DEGs_A <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  select(.,contrast, gene)
+write_tsv(DEGs, path = "output/DEGs_by_contrast_batch 60_abdominal.tsv")
+
+DEGs_Pp <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  select(.,contrast, gene)
+write_tsv(DEGs, path = "output/DEGs_by_contrast_batch 60_PlePed.tsv")
+
+```
+
+
+
+In terms of the specific genes differentially expressed, each colony shows a very different response. There are ZERO differentially expressed genes in common across all three colonies when analyzed individually. However, we still find some differentially expressed genes in common when the colonies are analyzed together, likely due to higher statistical power.
+
+##### DEGs in common beteween heated and shuffled corals
+```{r}
+# Find DEGs in common between Ch.Cc and Dc.Cc (same response when heated and when shuffled to D)
+genesincommon <- DE %>%
+  unite("contrast", num, den, sep = ".") %>%
+  filter(colony == "all", contrast %in% c("Ch.Cc", "Dc.Cc")) %>%
+  unnest(sig) %>%
+  select(contrast, gene, log2FoldChange) %>%
+  pivot_wider(names_from = contrast, values_from = log2FoldChange) %>%
+  drop_na() %>%
+  arrange(Ch.Cc) %>%
+  mutate(gene = factor(gene, levels = gene))
+  
+# Get normalized counts for the genes in common
+gcounts <- data.frame(vsd2[which(rownames(vsd2) %in% genesincommon$gene), ])
+gcounts <- rownames_to_column(gcounts, var = "gene") %>%
+  pivot_longer(-gene, names_to = "sample", values_to = "count") %>%
+  left_join(select(sdat0, sample, group)) %>%
+  mutate(gene = factor(gene, levels = levels(genesincommon$gene))) %>%
+  filter(group != "Dh")
+
+# Get group log2foldchanges for plotting
+gl2fc <- genesincommon %>%
+  pivot_longer(-gene, names_to = "group", values_to = "l2fc") %>%
+  mutate(group = str_sub(group, 1, 2))
+# Get group means for plotting
+gcountsmean <- gcounts %>%
+  group_by(gene, group) %>%
+  summarise(count = mean(count))
+
+# Plot
+plotgcounts <- gcounts %>%
+  ggplot(aes(x = group, y = pmax(0,log(count)))) +
+  geom_jitter(width = 0.2, aes(color = group)) +
+  geom_line(data = gcountsmean, aes(group = gene)) +
+  geom_text(data = gl2fc, aes(y = 2.4, label = round(l2fc, 2))) +
+  facet_wrap(~ gene) +
+  theme_custom() +
+  theme(legend.position = "none") +
+  labs(x = "", y = "log(Variance stabilized counts)") +
+  scale_y_continuous(limits = c(0, 2.6))
+plotgcounts
+
+ggsave(file = "figures/FigS9.png", width = 160, height = 160, units = "mm")
+
+# Table with annotations
+# Get gene annotations for plotting
+ganno <- left_join(genesincommon, mutate(trinotate, gene = `#gene_id`))
+write_tsv(ganno, path = "output/geneanno.tsv")
+
+# Print table
+ganno <- ganno %>%
+  select(gene, sprot_Top_BLASTP_hit, gene_ontology_blast)
+
+# Replace some  delimiter characters that disrupt HTML parsing
+ganno <- mutate_if(ganno, is.character, str_replace_all, pattern = "\\^", replacement = "\\\\")
+ganno <- mutate_if(ganno, is.character, str_replace_all, pattern = "\\`", replacement = "||||")
+
+# Print table
+knitr::kable(ganno) %>% 
+  kable_styling("striped") %>% 
+  column_spec(1:3, width_max = "50em") %>% 
+  scroll_box(height = "50em", width = "100%")
+
+```
+
+These 8 genes are significantly differentially expressed across all colonies in C corals when heated (Ch vs. Cc) and when shuffled to D (Dc vs. Cc).
+
+# GO enrichment analysis
+
+### D~Control~ vs. C~Control~
+```{r Dctrl.Cctrl, eval = FALSE}
+setwd("../code/GO_MWU")
+
+# Write all-colony D-control vs. C-control logP values to file for GO_MWU analysis
+DE %>%
+  filter(colony == "all", num == "Dc", den == "Cc") %>%
+  unnest(logP) %>%
+  select(gene, logP) %>%
+  write.table(., file = "Dctrl.Cctrl.logP.txt", row.names = FALSE, quote = FALSE, sep = ",")
+
+# Run GO_MWU for all-colony D-control vs. C-contol for Biological Process (BP) GO terms
+commandArgs <- function(...) c("Dctrl.Cctrl.logP.txt", "BP")
+source("GO_MWU.R")
+
+# Run GO_MWU for all-colony D-control vs. C-contol for Molecular Function GO terms
+commandArgs <- function(...) c("Dctrl.Cctrl.logP.txt", "MF")
+source("GO_MWU.R")
+
+# Run GO_MWU for all-colony D-control vs. C-contol for Cellular Component (CC) GO terms
+commandArgs <- function(...) c("Dctrl.Cctrl.logP.txt", "CC")
+source("GO_MWU.R")
+```
+
+```{r Dctrl.Cctrl.GO}
+# Get list of all significant GO terms for contrast
+Dctrl.Cctrl.GO <- as.list(
+  c(BP = "../code/GO_MWU/MWU_BP_Dctrl.Cctrl.logP.txt",
+    MF = "../code/GO_MWU/MWU_MF_Dctrl.Cctrl.logP.txt",
+    CC = "../code/GO_MWU/MWU_CC_Dctrl.Cctrl.logP.txt")
+  ) %>% map(read.table, header = T) %>%
+  bind_rows(.id = "ontology") %>%
+  as_tibble() %>%
+  filter(p.adj < 0.01) %>%
+  select(ontology, nseqs, name, delta.rank, p.adj)
+
+# Get list of individual genes with GO annotations and p-values for contrast
+allgenepvals <- as.list(
+  c(BP = "../code/GO_MWU/BP_Dctrl.Cctrl.logP.txt",
+    MF = "../code/GO_MWU/MF_Dctrl.Cctrl.logP.txt",
+    CC = "../code/GO_MWU/CC_Dctrl.Cctrl.logP.txt")
+  ) %>% map(read_tsv) %>%
+  bind_rows(.id = "ontology")
+
+# For all significant GO terms, count how many genes with that GO term have raw pvalue < 0.05 (= "nsig")
+Dctrl.Cctrl.GO <- Dctrl.Cctrl.GO %>%
+  mutate(nsig = map_dbl(name, function(.) {
+    filter(allgenepvals, name == ., -abs(value) <= log10(0.05)) %>%
+    nrow(.)
+  }))
+  
+# Print table
+Dctrl.Cctrl.GO %>%
+  unite("genes", nsig, nseqs, sep = "/") %>%
+  arrange(ontology, delta.rank) %>%
+  knitr::kable()
+
+# Run Matz code to create gomwuplot
+setwd("../code/GO_MWU/")
+gomwuPlot(inFile = "Dctrl.Cctrl.logP.txt", 
+  goDivision = "CC", goAnnotations = "Mcavernosa_gene2go.txt")
+```
+
+### C~Heat~ vs. C~Ccontrol~
+```{r Cheat.Cctrl, eval = FALSE}
+setwd("../code/GO_MWU")
+
+# Write all-colony C-heat vs. C-control logP values to file for GO_MWU analysis
+DE %>%
+  filter(colony == "all", num == "Ch", den == "Cc") %>%
+  unnest(logP) %>%
+  select(gene, logP) %>%
+  write.table(., file = "Cheat.Cctrl.logP.txt", row.names = FALSE, quote = FALSE, sep = ",")
+
+# Run GO_MWU for all-colony C-heat vs. C-contol for Biological Process (BP) GO terms
+commandArgs <- function(...) c("Cheat.Cctrl.logP.txt", "BP")
+source("GO_MWU.R")
+
+# Run GO_MWU for all-colony C-heat vs. C-contol for Molecular Function GO terms
+commandArgs <- function(...) c("Cheat.Cctrl.logP.txt", "MF")
+source("GO_MWU.R")
+
+# Run GO_MWU for all-colony C-heat vs. C-contol for Cellular Component (CC) GO terms
+commandArgs <- function(...) c("Cheat.Cctrl.logP.txt", "CC")
+source("GO_MWU.R")
+```
+
+```{r Cheat.Cctrl.GO}
+# Get list of all significant GO terms for contrast
+Cheat.Cctrl.GO <- as.list(
+  c(BP = "../code/GO_MWU/MWU_BP_Cheat.Cctrl.logP.txt",
+    MF = "../code/GO_MWU/MWU_MF_Cheat.Cctrl.logP.txt",
+    CC = "../code/GO_MWU/MWU_CC_Cheat.Cctrl.logP.txt")
+  ) %>% map(read.table, header = T) %>%
+  bind_rows(.id = "ontology") %>%
+  as_tibble() %>%
+  filter(p.adj < 0.01) %>%
+  select(ontology, nseqs, name, delta.rank, p.adj)
+
+# Get list of individual genes with GO annotations and p-values for contrast
+allgenepvals <- as.list(
+  c(BP = "../code/GO_MWU/BP_Cheat.Cctrl.logP.txt",
+    MF = "../code/GO_MWU/MF_Cheat.Cctrl.logP.txt",
+    CC = "../code/GO_MWU/CC_Cheat.Cctrl.logP.txt")
+  ) %>% map(read_tsv) %>%
+  bind_rows(.id = "ontology")
+
+# For all significant GO terms, count how many genes with that GO term have raw pvalue < 0.05 (= "nsig")
+Cheat.Cctrl.GO <- Cheat.Cctrl.GO %>%
+  mutate(nsig = map_dbl(name, function(.) {
+    filter(allgenepvals, name == ., -abs(value) <= log10(0.05)) %>%
+    nrow(.)
+  }))
+  
+# Print table
+Cheat.Cctrl.GO %>%
+  unite("genes", nsig, nseqs, sep = "/") %>%
+  arrange(ontology, delta.rank) %>%
+  knitr::kable()
+```
+
+### D~Heat~ vs. D~Control~
+```{r Dheat.Dctrl, eval = FALSE}
+setwd("../code/GO_MWU")
+
+# Write all-colony D-heat vs. D-control logP values to file for GO_MWU analysis
+DE %>%
+  filter(colony == "all", num == "Dh", den == "Dc") %>%
+  unnest(logP) %>%
+  select(gene, logP) %>%
+  write.table(., file = "Dheat.Dctrl.logP.txt", row.names = FALSE, quote = FALSE, sep = ",")
+
+# Run GO_MWU for all-colony D-heat vs. D-contol for Biological Process (BP) GO terms
+commandArgs <- function(...) c("Dheat.Dctrl.logP.txt", "BP")
+source("GO_MWU.R")
+
+# Run GO_MWU for all-colony D-heat vs. D-contol for Molecular Function GO terms
+commandArgs <- function(...) c("Dheat.Dctrl.logP.txt", "MF")
+source("GO_MWU.R")
+
+# Run GO_MWU for all-colony D-heat vs. D-contol for Cellular Component (CC) GO terms
+commandArgs <- function(...) c("Dheat.Dctrl.logP.txt", "CC")
+source("GO_MWU.R")
+```
+
+```{r Dheat.Dctrl.GO}
+# Get list of all significant GO terms for contrast
+Dheat.Dctrl.GO <- as.list(
+  c(BP = "../code/GO_MWU/MWU_BP_Dheat.Dctrl.logP.txt",
+    MF = "../code/GO_MWU/MWU_MF_Dheat.Dctrl.logP.txt",
+    CC = "../code/GO_MWU/MWU_CC_Dheat.Dctrl.logP.txt")
+  ) %>% map(read.table, header = T) %>%
+  bind_rows(.id = "ontology") %>%
+  as_tibble() %>%
+  filter(p.adj < 0.01) %>%
+  select(ontology, nseqs, name, delta.rank, p.adj)
+
+# Get list of individual genes with GO annotations and p-values for contrast
+allgenepvals <- as.list(
+  c(BP = "../code/GO_MWU/BP_Dheat.Dctrl.logP.txt",
+    MF = "../code/GO_MWU/MF_Dheat.Dctrl.logP.txt",
+    CC = "../code/GO_MWU/CC_Dheat.Dctrl.logP.txt")
+  ) %>% map(read_tsv) %>%
+  bind_rows(.id = "ontology")
+
+# For all significant GO terms, count how many genes with that GO term have raw pvalue < 0.05 (= "nsig")
+Dheat.Dctrl.GO <- Dheat.Dctrl.GO %>%
+  mutate(nsig = map_dbl(name, function(.) {
+    filter(allgenepvals, name == ., -abs(value) <= log10(0.05)) %>%
+    nrow(.)
+  }))
+  
+# Print table
+Dheat.Dctrl.GO %>%
+  unite("genes", nsig, nseqs, sep = "/") %>%
+  arrange(ontology, delta.rank) %>%
+  knitr::kable()
+```
+
+### C~Heat~ vs. D~Heat~
+
+```{r Dheat.Cheat, eval = FALSE}
+setwd("../code/GO_MWU")
+
+# Write all-colony D-heat vs. C-heat logP values to file for GO_MWU analysis
+DE %>%
+  filter(colony == "all", num == "Dh", den == "Ch") %>%
+  unnest(logP) %>%
+  select(gene, logP) %>%
+  write.table(., file = "Dheat.Cheat.logP.txt", row.names = FALSE, quote = FALSE, sep = ",")
+
+# Run GO_MWU for all-colony D-heat vs. C-heat for Biological Process (BP) GO terms
+commandArgs <- function(...) c("Dheat.Cheat.logP.txt", "BP")
+source("GO_MWU.R")
+
+# Run GO_MWU for all-colony D-heat vs. C-heat for Molecular Function GO terms
+commandArgs <- function(...) c("Dheat.Cheat.logP.txt", "MF")
+source("GO_MWU.R")
+
+# Run GO_MWU for all-colony D-heat vs. C-heat for Cellular Component (CC) GO terms
+commandArgs <- function(...) c("Dheat.Cheat.logP.txt", "CC")
+source("GO_MWU.R")
+```
+
+```{r Dheat.Cheat.GO}
+Dheat.Cheat.GO <- as.list(
+  c(BP = "../code/GO_MWU/MWU_BP_Dheat.Cheat.logP.txt",
+    MF = "../code/GO_MWU/MWU_MF_Dheat.Cheat.logP.txt",
+    CC = "../code/GO_MWU/MWU_CC_Dheat.Cheat.logP.txt")
+  ) %>% map(read.table, header = T) %>%
+  bind_rows(.id = "ontology") %>%
+  as_tibble() %>%
+  filter(p.adj < 0.01)
+
+### no significant GO terms for Dheat vs. Cheat...
+```
+
+Supplemental table with all GO results
+```{r}
+allGO <- bind_rows(.id = "contrast",
+  Dctrl.Cctrl = Dctrl.Cctrl.GO,
+  Cheat.Cctrl = Cheat.Cctrl.GO,
+  Dheat.Dctrl = Dheat.Dctrl.GO,
+  Dheat.Cheat = Dheat.Cheat.GO
+) %>%
+  unite("genes", nsig, nseqs, sep = "/") %>%
+  select(contrast, ontology, genes, name, delta.rank, p.adj) %>%
+  arrange(contrast, ontology, delta.rank)
+
+write_csv(allGO, path = "output/allGO.csv")
+```
+
+# KOG enrichment analysis
+
+Using the signed log(p-values) from the differential expression analysis, we can analyze which KOG classifications are up- or down-regulated within each colony, and across all three colonies together.
+
+```{r KOG, results = 'hide'}
+# Import KOG annotations for Mcavernosa genome # Downloaded from M. Studivan github
+gene2kog <- read.table("../data/genome/Mcavernosa_iso2kog.tab", sep = "\t") %>% 
+   filter(!V2 == "")
+
+# Run KOG.MWU analysis on all contrasts
+KOG <- DE %>%
+  mutate(KOG = map(logP, ~ kog.mwu(., gene2kog)),
+         # If a KOG term has <10 genes associated with it, set delta rank to zero
+         KOG = map(KOG, ~ mutate(., delta.rank = ifelse(nseqs < 10, 0, delta.rank))))
+
+# Generate all KOG delta rank tables
+kogtables <- KOG %>%
+  mutate(genet = case_when(colony == 20 ~ "genet 1", 
+                           colony == 22 ~ "genet 2", 
+                           colony == 26 ~ "genet 3", 
+                           colony == "all" ~ "all genets")) %>%
+  mutate(genet = factor(genet, levels = c("genet 1", "genet 2", "genet 3", "all genets"))) %>%
+  unnest(KOG) %>%
+  select(genet, num, den, term, delta.rank) %>%
+  split(list(.$num, .$den), drop = TRUE) %>%
+  map(~ spread(., genet, delta.rank)) %>%
+  map(~ column_to_rownames(select(., -num, -den), "term"))
+
+# Generate KOG p-value stars
+kogpvals <- KOG %>%
+  mutate(genet = case_when(colony == 20 ~ "genet 1", 
+                           colony == 22 ~ "genet 2", 
+                           colony == 26 ~ "genet 3", 
+                           colony == "all" ~ "all genets")) %>%
+  mutate(genet = factor(genet, levels = c("genet 1", "genet 2", "genet 3", "all genets"))) %>%
+  unnest(KOG) %>%
+  select(genet, num, den, term, padj) %>%
+  split(list(.$num, .$den), drop = TRUE) %>%
+  map(~ spread(., genet, padj)) %>%
+  map(~ column_to_rownames(select(., -num, -den), "term")) %>%
+  map(~ transmute_all(., gtools::stars.pval))
+
+```
+
+### KOG results for each genet
+```{r plot_KOG}
+# Function to plot KOG delta ranks heatmap
+KOGheatmap <- function(deltaranks, pvals, ...) {
+  deltaranks <- as.matrix(deltaranks)
+  paletteLength <- 100
+  myColor <- colorRampPalette(rev(c("chocolate1","#FEE090","grey10", "cyan3","cyan")))(paletteLength)
+  myBreaks <- c(seq(min(deltaranks), 0, length.out = ceiling(paletteLength/2) + 1), 
+                seq(max(deltaranks)/paletteLength, max(deltaranks), 
+                    length.out = floor(paletteLength/2)))
+  pheatmap(mat = deltaranks, display_numbers = pvals, fontsize_number = 8,
+           cluster_cols = FALSE, cluster_rows = FALSE,
+           treeheight_row = 15, treeheight_col = 15,
+           border_color = "white", scale = "none",
+           color = myColor, breaks = myBreaks, ...)
+}
+
+KOGDcCc <- KOGheatmap(kogtables$Dc.Cc, kogpvals$Dc.Cc, main = "                     D-control vs. C-control", 
+                      fontsize = 8)
+ggsave(filename = "figures/FigS5.png", plot = KOGDcCc, width = 112, height = 84.5, units = "mm")
+KOGChCc <- KOGheatmap(kogtables$Ch.Cc, kogpvals$Ch.Cc, main = "                     C-heated vs. C-control",
+                      fontsize = 8)
+ggsave(filename = "figures/FigS6.png", plot = KOGChCc, width = 112, height = 84.5, units = "mm")
+KOGDhDc <- KOGheatmap(kogtables$Dh.Dc, kogpvals$Dh.Dc, main = "                     D-heated vs. D-control",
+                      fontsize = 8)
+ggsave(filename = "figures/FigS7.png", plot = KOGDhDc, width = 112, height = 84.5, units = "mm")
+KOGDhCh <- KOGheatmap(kogtables$Dh.Ch, kogpvals$Dh.Ch, main = "                     D-heated vs. C-heated",
+                      fontsize = 8)
+ggsave(filename = "figures/FigS8.png", plot = KOGDhCh, width = 112, height = 84.5, units = "mm")
+```
+
+### KOG results across all genets
+
+```{r plot_KOG_avg}
+kogtable2 <- KOG %>%
+  unnest(KOG) %>%
+  filter(colony == "all") %>%
+  select(num, den, term, delta.rank) %>%
+  unite("contrast", num, den, sep = ".") %>%
+  spread(contrast, delta.rank) %>%
+  select(term, Ch.Cc, Dc.Cc, Dh.Dc, Dh.Ch) %>%
+  column_to_rownames("term")
+  
+kogpval2 <- KOG %>%
+  unnest(KOG) %>%
+  filter(colony == "all") %>%
+  select(num, den, term, padj) %>%
+  unite("contrast", num, den, sep = ".") %>%
+  spread(contrast, padj) %>%
+  select(term, Ch.Cc, Dc.Cc, Dh.Dc, Dh.Ch) %>%
+  column_to_rownames("term") %>%
+  transmute_all(gtools::stars.pval)
+
+fig4a <- KOGheatmap(
+  select(kogtable2, Ch.Cc, Dc.Cc, Dh.Dc, Dh.Ch),
+  select( kogpval2, Ch.Cc, Dc.Cc, Dh.Dc, Dh.Ch),
+  labels_col = c(expression("C"[H]~"vs."~"C"[C]),
+                  expression("D"[C]~"vs."~"C"[C]),
+                  expression("D"[H]~"vs."~"D"[C]),
+                  expression("D"[H]~"vs."~"C"[H])),
+  fontsize = 8)
+
+ggsave(filename = "figures/fig4a.png", fig4a, width = 112, height = 84.5, units = "mm")
+```
+
+### Count DEGs for each KOG
+```{r koggenecounts}
+# Get number of genes DE (unadjusted p<0.05) associated with each KOG term (this is default behavior of KOG_MWU in its plotting function)
+kogout <- KOG %>%
+  unnest(KOG) %>%
+  filter(colony == "all") %>%
+  unite("contrast", num, den, sep = ".") %>%
+  select(contrast, dsr, term, nseqs, delta.rank, padj) %>%
+  filter(contrast %in% c("Ch.Cc", "Dh.Dc", "Dc.Cc", "Dh.Ch"))
+
+kogout <- kogout %>%
+  mutate(nsig = map2_dbl(term, dsr, function(.x, .y) {
+    geneswithterm <- dplyr::filter(gene2kog, V2 == as.character(.x)) %>% pull(V1)
+    geneswithp <- rownames_to_column(data.frame(.y[which(.y$pvalue < 0.05), ]), "gene")
+    return(length(intersect(geneswithterm, geneswithp$gene)))
+  }))
+
+# Write table for supp info
+kogout <- kogout %>%
+  filter(padj < 0.1) %>%
+  unite("genes", nsig, nseqs, sep = "/") %>%
+  select(contrast, genes, term, delta.rank, padj) %>%
+  mutate(padj = signif(padj, digits = 3))
+
+write_tsv(kogout, "output/kogout.txt")
+
+knitr::kable(kogout)  %>%
+  kable_styling(full_width = TRUE)
+```
+
+### Correlation of KOG delta-ranks
+
+Testing similarity of transcriptome responses
+
+```{r KOG_correlations}
+# Visualize KOG response correlations between different contrasts
+GGally::ggpairs(kogtable2, lower = list(continuous = "smooth"), diag = NULL)
+
+# Test whether correlation coefficients are greater than 0.5 (null hypothesis when comparing ratios with common denominator) or 0 (when ratios contain all different variables)
+comparisons <- c("~ Ch.Cc + Dc.Cc", "~ Ch.Cc + Dc.Ch", "~ Ch.Cc + Dh.Cc", "~ Ch.Cc + Dh.Ch", "~ Ch.Cc + Dh.Dc",
+                 "~ Dc.Cc + Dc.Ch", "~ Dc.Cc + Dh.Cc", "~ Dc.Cc + Dh.Ch", "~ Dc.Cc + Dh.Dc",
+                 "~ Dc.Ch + Dh.Cc", "~ Dc.Ch + Dh.Ch", "~ Dc.Ch + Dh.Dc",
+                 "~ Dh.Cc + Dh.Ch", "~ Dh.Cc + Dh.Dc",
+                 "~ Dh.Ch + Dh.Dc")
+
+tibble(comparison = comparisons) %>%
+  filter(!grepl("Dc.Ch|Cc.Dh|Dh.Cc", comparison)) %>%
+  mutate(cor = map(comparison, ~ cor.test(as.formula(.), data = kogtable2) %>% broom::tidy())) %>%
+  unnest() %>%
+  select(comparison, estimate, conf.low, conf.high) %>%
+  mutate(samevars = map_lgl(comparison, ~ any(table(str_extract_all(., "C.|D.")) > 1)),
+         nocor = pmap_lgl(list(samevars, conf.low, conf.high), function(x, y, z) {
+           ifelse(x, !(y > 0.5 | z < -0.5), between(0, y, z))}))
+
+# The 95% correlation coefficient for Ch.Cc and Dc.Cc does not contain 0.5 -- the expected correlation coefficient between the two ratios if the correlation between their numerators was zero. 
+
+# The correlation between Dc/Cc and Ch/Cc is 0.77. They have a common denominator so part of this correlation is due to that alone, although part is also due to an (unmeasurable) correlation between Dc and Ch. The correlation between Dc and Ch must be at least 0.5 (in the most conservative case that the correlation of both Dc and Ch with Cc is zero) (see Dunlap et al. 1997). Further evidence that Dc and Ch are correlated is that no KOG categories are significantly different in the comparison of Dc to Ch.
+```
+
+```{r, fig.width = 3.5 }
+# Figure showing KOG correlations between Dc.Cc and Ch.Cc, and lack of correlation between Dh.Dc and Ch.Cc.
+fig4b <- kogtable2 %>%
+  rownames_to_column("kog") %>%
+  gather(contrast, value, -kog, -Ch.Cc) %>%
+  filter(contrast %in% c("Dh.Dc", "Dc.Cc")) %>%
+  mutate(contrast = factor(contrast, levels = c("Dh.Dc", "Dc.Cc"),
+                           labels = c(expression("D"[H]~"vs."~"D"[C]), expression("D"[C]~"vs."~"C"[C])))) %>%
+  ggplot(aes(x = Ch.Cc, y = value)) +
+  facet_grid(contrast ~ ., labeller = "label_parsed") +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  stat_cor(aes(label = ..r.label..), size = 2) +
+  theme_custom() +
+  labs(x = expression("C"[H]~"vs."~"C"[C]~"KOG delta ranks"), y = "KOG delta ranks")
+
+ggsave(plot = last_plot(), filename = "figures/fig4b.png", width = 80, height = 120, units = "mm")
+```
+
+```{r, eval = FALSE}
+# Combine KOG heatmap with KOG correlations into multi-panel figure
+grob4a = grid::grid.grabExpr(grid::grid.draw(fig4a)) 
+
+fig4 <- plot_grid(NULL, grob4a, fig4b, rel_widths = c(0.025, 0.685, 0.29), 
+                  nrow = 1, labels = c("A", "", "B"))
+
+ggsave(plot = fig4, filename = "figures/fig4.png", width = 169, height = 90, units = "mm")
+```
+
+
+# No-shuffling controls
+
+Are DEGs associated with symbiont shuffling due to having changed symbionts, or having bleached?
+
+Other coral genotypes were bleached but did not shuffle their symbionts -- they had clade C to begin with, and clade C after recovery. We can use these samples as controls to test whether the change in gene expression in corals that shuffle is attributable to the symbiont change or the previous stress.
+
+```{r}
+# Colonies EXCEPT 20, 22, and 26
+# Only time point at end of heat stress (but these were all at ambient - no hs)
+ns.dds <- dds[, !colData(dds)$colony %in% c(20, 22, 26) & colData(dds)$date_sampled == "2017-10-28"]
+# Filter out Mc2840 -- it shuffled and had high propD
+ns.dds <- ns.dds[, !rownames(colData(ns.dds)) %in% c("Mc28.40")]
+### Remove genes counted zero times in subset
+ns.dds <- ns.dds[ rowSums(counts(ns.dds)) > 0, ]
+# Remove genes with less than 1 mean count across samples
+ns.dds <- ns.dds[ rowMeans(counts(ns.dds)) > 1, ]
+### Drop unused factor levels
+colData(ns.dds) <- droplevels(colData(ns.dds))
+# Add design formula
+design(ns.dds) <- formula(~ colony + trt1)
+
+# Run DESeq pipeline
+ns.dds <- DESeq(ns.dds)
+
+# Find DE genes between prev. bleached vs. control (trt1)
+res <- results(ns.dds, contrast = c("trt1", "b", "c"))
+summary(res)  ### No differentially expressed genes
+```
+
+```{r}
+# Visualize nonshuffling corals with PCoA
+vsd <- vst(ns.dds, blind = TRUE)
+
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd)) %>% 
+  cbind(cmdscale(sampleDistMatrix))# %>%
+ 
+noshuffpcoa <- ggplot(mds, aes(x = `1`, y = `2`, color = trt1, shape = colony)) +
+  geom_point() +
+  scale_color_discrete(name = "Treatment", labels = c("Bleached and\nrecovered", "Control")) +
+  scale_shape_discrete(name = "Genet") +
+  labs(x = "PC1", y = "PC2") +
+  theme_custom()
+noshuffpcoa
+
+ggsave(noshuffpcoa, file = "figures/FigS4.png", width = 120, height = 90, units = "mm")
+```
