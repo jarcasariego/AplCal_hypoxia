@@ -1,0 +1,54 @@
+#!/bin/bash
+#SBATCH --account=iacc_jeirinlo
+#SBATCH --qos highmem1
+#SBATCH --partition highmem1
+
+# Number of nodes
+#SBATCH -N 1
+
+# Number of tasks
+#SBATCH -n 8
+
+#SBATCH --output=20220902_log_TagSeq_final_QC
+
+##########################################################
+# Setup envrionmental variable. 
+##########################################################
+export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
+. $MODULESHOME/../global/profile.modules
+module load miniconda3-4.5.11-gcc-8.2.0-oqs2mbg
+pwd; hostname; date
+ 
+echo "Running program on $SLURM_CPUS_ON_NODE CPU cores"
+
+##########################################################
+
+cd /scratch/jeirinlo/jrodr979/Aplysia_hypoxia/TagSeq/20220901_Trim_STAR_alignment
+
+source activate my_anaconda
+
+###########
+# MultiQC #
+###########
+
+call="multiqc
+. \
+ --config multiqc_config.yaml"
+
+echo $call
+eval $call
+
+########
+# Copy #
+########
+
+mkdir GeneCounts
+"$(find `.` -name '*ReadsPerGene.out.tab' -print0 | xargs -0 cp -t GeneCounts)"
+
+###################
+# Run Information #
+###################
+
+end=`date +%s`
+runtime=$((end-start))
+echo $runtime

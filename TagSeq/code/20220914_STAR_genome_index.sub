@@ -1,0 +1,47 @@
+#!/bin/bash
+#SBATCH --account=iacc_jeirinlo
+#SBATCH --qos highmem1
+#SBATCH --partition highmem1
+
+# Number of nodes
+#SBATCH -N 1
+
+# Number of tasks
+#SBATCH -n 16
+
+#SBATCH --output=log_STAR_index_20220909
+
+##########################################################
+# Setup envrionmental variable. 
+##########################################################
+export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
+. $MODULESHOME/../global/profile.modules
+module load star-2.7.9a
+pwd; hostname; date
+ 
+echo "Running program on $SLURM_CPUS_ON_NODE CPU cores"
+
+##########################################################
+
+genome="/scratch/jeirinlo/jrodr979/Aplysia_hypoxia/TagSeq/20220909_Trim_STAR_alignment_2/data/AplCal3.0/sequence"
+annotation="/scratch/jeirinlo/jrodr979/Aplysia_hypoxia/TagSeq/20220909_Trim_STAR_alignment_2/data/AplCal3.0/annotation"
+genomeDir="/scratch/jeirinlo/jrodr979/Aplysia_hypoxia/TagSeq/20220909_Trim_STAR_alignment_2/data/AplCal3.0/star_100"
+
+
+####################
+# Build Star Index #
+####################
+# the splice-junction-data-base-overhang parameter should have a value of read length – 1
+
+STAR \
+--runThreadN $SLURM_CPUS_ON_NODE \
+--runMode genomeGenerate \
+--genomeDir ${genomeDir} \
+--genomeFastaFiles ${genome}/unplaced.scaf.fna \
+--sjdbGTFfile ${annotation}/AplCal.genomic.UTR_3kb_extended_JARC.gff \
+--sjdbGTFfeatureExon gene \
+--sjdbGTFtagExonParentGene Name \
+--sjdbGTFtagExonParentTranscript ID \
+--genomeSAindexNbases 13 \
+--sjdbOverhang 99
+
