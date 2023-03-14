@@ -13,6 +13,7 @@
 /*.tar.gz
 /*.bam
 *.bam
+*fastq.gz
 
 # Output files from R CMD check
 /*.Rcheck/
