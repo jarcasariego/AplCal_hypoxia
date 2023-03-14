@@ -1,0 +1,344 @@
+---
+title: "Aplysia_hypoxia_exp_20220328 (7 days @ 21C/with 6h pulses of <20% DO Batches #60 and #71)"
+author: "Javier Rodriguez Casariego"
+date: "4/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia/Reflexes/')
+```
+
+```{r load libraries, include=FALSE}
+
+library(lubridate)
+library(dygraphs)
+library(xts)
+library(gridExtra)
+library(ggplot2)
+library(dplyr)
+library(patchwork) # To display 2 charts together install.packages("patchwork")
+library(hrbrthemes) # install.packages("hrbrthemes")
+library(vegan)
+library(dplyr)
+library(pairwiseAdonis)
+library(data.table)
+library(janitor) # install.packages("janitor")
+library(chron) # install.packages("chron")
+
+```
+
+
+# Read sensor data
+```{r}
+# load sensor data
+
+sensor_trt <- read.csv("data/DO_data/Aplysia_exp_20220328_trt.csv", header = T)
+sensor_trt <- sensor_trt[, -1]
+
+sensor_ctrl <- read.csv("data/DO_data/Aplysia_exp_20220328_ctrl.csv", header = TRUE)
+sensor_ctrl <- sensor_ctrl[,-1]
+
+
+# convert to date time format
+sensor_trt$Date.Time..GMT.04.00 <- mdy_hm(sensor_trt$Date.Time..GMT.04.00)
+sensor_ctrl$Date.Time..GMT.04.00 <- mdy_hm(sensor_ctrl$Date.Time..GMT.04.00)
+
+colnames(sensor_trt) <- c("date_time", "DO", "Temp")
+colnames(sensor_ctrl) <- c("date_time", "DO", "Temp")
+
+## Computer time was wrong at the time of starting the sensors. Sensors were initialized at 11 am, so I need to substract two hours
+hrs <- 2*60*60
+
+sensor_ctrl$date_time <- sensor_ctrl$date_time - hrs
+sensor_trt$date_time <- sensor_trt$date_time - hrs
+sensor_ctrl$time <- as.ITime(sensor_ctrl$date_time)
+sensor_trt$time <- as.ITime(sensor_trt$date_time)
+sensor_ctrl$date <-as.IDate(sensor_ctrl$date_time)
+sensor_trt$date <-as.IDate(sensor_trt$date_time)
+
+sensor_ctrl_agg <- sensor_ctrl[,2:4]
+sensor_ctrl_mean <- aggregate(.~time, sensor_ctrl_agg, function(x) c(mean = mean(x), sd = sd(x)))
+sensor_ctrl_mean$time <- as.POSIXct(sensor_ctrl_mean$time)
+
+sensor_trt_agg <- sensor_trt[,2:4]
+sensor_trt_mean <- aggregate(.~time, sensor_trt_agg, function(x) c(mean = mean(x), sd = sd(x)))
+sensor_trt_mean$time <- as.POSIXct(sensor_trt_mean$time)
+```
+
+# Plot DO and temperature tracks
+```{r plot time series}
+
+p1 <- ggplot(sensor_trt, aes(x=date_time)) +
+  
+  geom_line( aes(y=Temp), size=0.5, color="blue") + 
+  geom_line( aes(y=DO*2), size=0.5, color="black") +
+  ggtitle("Hypoxia") +
+  scale_x_datetime(name="Time") +
+  scale_y_continuous(
+    
+    # Features of the first axis
+    name = "Temp (°C)",
+    
+    # Add a second axis and specify its features
+    sec.axis = sec_axis(~.*0.5, name="DO (mg/mL)")
+  ) + 
+  
+  theme_bw() +
+
+  theme(
+    axis.title.y = element_text(size=11),
+    axis.title.y.right = element_text(size=11)
+  )  
+
+
+p2 <- ggplot(sensor_ctrl, aes(x=date_time)) +
+  
+  geom_line( aes(y=Temp), size=0.5, color="blue") + 
+  geom_line( aes(y=DO*2), size=0.5, color="black") +
+  ggtitle("Control") +
+  scale_x_datetime(name="Time") +
+  scale_y_continuous(
+    
+    # Features of the first axis
+    name = "Temp (°C)",
+    
+    # Add a second axis and specify its features
+    sec.axis = sec_axis(~.*0.5, name="DO (mg/mL)")
+  ) + 
+  
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size=11),
+    axis.title.y.right = element_text(size=11)
+  ) 
+
+ggsave("figures/DO_Temp_plots.png", plot = grid.arrange(p1, p2, ncol=1), width = 8, height = 3)
+
+# Plot average 
+
+
+p3 <-ggplot(sensor_trt_mean, aes(x=time, group = 1)) +
+  geom_line( aes(y=Temp[,1]), size=0.5, color="black", linetype = 2) + 
+  geom_ribbon(aes(y = Temp[,1], ymin = Temp[,1] - Temp[,2], ymax = Temp[,1] + Temp[,2]), alpha = 0.35) +
+  geom_line( aes(y=DO[,1]*2), size=0.5, color="black") +
+  geom_ribbon(aes(y = DO[,1]*2, ymin = DO[,1]*2 - DO[,2], ymax = DO[,1]*2 + DO[,2]), alpha = 0.35) +
+  scale_x_datetime(date_breaks = "3 hour", date_labels = "%H:%M") +
+  #scale_x_time(breaks = scales::breaks_width("4 hour"), date_labels = "%H:%M") +
+  scale_y_continuous(
+    
+    # Features of the first axis
+    name = "Temp (°C)",
+    
+    # Add a second axis and specify its features
+    sec.axis = sec_axis(~.*0.5, name="DO (mg/mL)")
+  ) + 
+  
+  theme_bw() +
+
+  theme(
+    axis.title.y = element_text(size=11),
+    axis.title.y.right = element_text(size=11)
+  )  
+
+ggsave("figures/DO_Temp_daily_average_plots.png", p3, width = 5, height = 3)
+
+p3
+```
+Growth
+```{r plot growth per batch}
+weight <- read.csv("data/Growth/growth_data.csv")
+
+weight$treatment <- as.factor(weight$treatment)
+weight$sample <- as.factor(weight$sample)
+weight$batch <- as.factor(weight$batch)
+levels(weight$treatment) <- c("control", "hypoxia")
+levels(weight$sample) <- c("Day 1", "Day 6")
+
+p1 <- ggplot(weight[which(weight$batch=="60"),], aes(x=sample, y=weight.g., fill = treatment)) +
+  geom_boxplot() +
+  scale_x_discrete(limits=c("Day 1", "Day 6")) +
+  scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
+  scale_fill_brewer(palette="Greys") + 
+  labs(x=NULL, y = "Total weight (g)") +
+  theme_classic()
+
+weight2 <- weight[which(weight$sample=="Day 1"),]
+colnames(weight2)[6] <- "day_1" 
+weight2$day_6 <- weight[which(weight$sample=="Day 6"), 6]
+weight2$rate <- weight2$day_6/weight2$day_1
+
+p2 <- ggplot(weight2, aes(x = treatment, y = rate, fill=batch)) +
+  geom_boxplot() +
+  scale_fill_discrete(labels = c("lab-reared parents", "wild parents")) +
+  scale_fill_brewer(palette="Greys") + 
+  labs(x=NULL, y = "Growth rate") +
+  theme_classic()
+
+ggsave("figures/growth_rate.png", p2, width = 3, height = 3)
+
+```
+
+# Check significance
+```{r}
+# PERMANOVA analyses 
+
+adonis(rate~treatment, data = weight2[which(weight2$batch == 60),], method = "euclidean")
+adonis(rate~treatment*batch, data = weight2, method = "euclidean")
+
+```
+
+Reflexes analyses
+```{r plot reflexes, fig.height = 4, fig.width = 10}
+# load behavioral data
+
+reflex <- read.csv("data/Reflex_data_experiment_20220328.csv", header = TRUE, )
+
+TTR <- reflex[,c(1:6)] # Keep only Pre and Post Hypoxia and eliminate NAs
+TWR <- reflex[,c(1:5,7:8,10)]
+
+colnames(TTR) <- c("ID","treatment","batch", "cage", "sample","TTR")
+colnames(TWR) <- c("ID","treatment","batch", "cage","sample","Li","Lc","duration")
+
+#TTR
+
+TTR$treatment <- as.factor(TTR$treatment)
+TTR$sample <- as.factor(TTR$sample)
+TTR$batch <- as.factor(TTR$batch)
+levels(TTR$treatment) <- c("control", "hypoxia")
+levels(TTR$sample)
+levels(TTR$treatment)
+levels(TTR$batch)
+
+#replace failed for a large number
+TTR$TTR <- as.numeric(gsub(">120", 120, TTR$TTR))
+
+p1 <- ggplot(TTR[which(TTR$batch=="60"),], aes(x=sample, y=TTR, fill = treatment)) +
+  geom_boxplot() +
+  scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
+  scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
+  scale_fill_brewer(palette="Greys") + 
+  labs(x=NULL, y = "Time to Right (s)") +
+  theme_classic()
+
+p4 <- ggplot(TTR[which(TTR$batch=="71"),], aes(x=sample, y=TTR, fill = treatment)) +
+  geom_boxplot() +
+  scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
+  scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
+  scale_fill_brewer(palette="Greys") + 
+  labs(x=NULL, y = "Time to Right (s)") +
+  theme_classic()
+
+# TWR 
+
+TWR$contraction <- TWR$Li-TWR$Lc
+TWR <- TWR[, c(1:5,8:9)] # keep only duration and contraction
+#replace failed for a large number
+TWR$duration[is.na(TWR$duration)] <- 120
+TWR$contraction[is.na(TWR$contraction)] <- 0
+head(TWR)
+
+TWR$treatment <- as.factor(TWR$treatment)
+TWR$sample <- as.factor(TWR$sample)
+
+levels(TWR$treatment) <- c("control", "hypoxia")
+
+p2 <- ggplot(TWR[which(TTR$batch=="60"),], aes(x=sample, y=duration, fill = treatment)) +
+  geom_boxplot() +
+  scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
+  scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
+  scale_fill_brewer(palette="Greys") + 
+  labs(x=NULL, y = "Duration TWR (s)") +
+  theme_classic()
+
+p3 <- ggplot(TWR[which(TTR$batch=="60"),], aes(x=sample, y=contraction, fill = treatment)) +
+  geom_boxplot() +
+  scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
+  scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
+  scale_fill_brewer(palette="Greys") + 
+  labs(x=NULL, y = "Amplitude TWR (cm)") +
+  theme_classic()
+
+p5 <- ggplot(TWR[which(TTR$batch=="71"),], aes(x=sample, y=duration, fill = treatment)) +
+  geom_boxplot() +
+  scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
+  scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
+  scale_fill_brewer(palette="Greys") + 
+  labs(x=NULL, y = "Duration TWR (s)") +
+  theme_classic()
+
+p6 <- ggplot(TWR[which(TTR$batch=="71"),], aes(x=sample, y=contraction, fill = treatment)) +
+  geom_boxplot() +
+  scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
+  scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
+  scale_fill_brewer(palette="Greys") + 
+  labs(x=NULL, y = "Amplitude TWR (cm)") +
+  theme_classic()
+
+ggsave("figures/reflex_plot_batch60.png", plot = grid.arrange(p1, p2, p3, ncol=3), width = 12, height = 3)
+
+ggsave("figures/reflex_plot_batch70.png", plot = grid.arrange(p4, p5, p6, ncol=3), width = 12, height = 3)
+```
+
+
+# Check significance
+```{r}
+# PERMANOVA analyses 
+# General differences
+adonis(TTR~treatment*sample*batch, data = TTR, method = "euclidean")
+adonis(TTR~treatment*sample, data = TTR, strata = TTR$batch, method = "euclidean")
+
+#Per batch
+TTR60 <- TTR[which(TTR$batch==60),]
+TTR71 <- TTR[which(TTR$batch==71),]
+adonis(TTR~treatment*sample, data = TTR60, method = "euclidean")
+adonis(TTR~treatment*sample, data = TTR71, method = "euclidean")
+
+# Per batch and sample date
+adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 2"),], na.rm =T, method = "euclidean")
+adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 3"),], na.rm =T, method = "euclidean")
+adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 4"),], na.rm =T, method = "euclidean")
+adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 5"),], na.rm =T, method = "euclidean")
+adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 6"),], na.rm =T, method = "euclidean")
+
+adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 2"),], na.rm =T, method = "euclidean")
+adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 3"),], na.rm =T, method = "euclidean")
+adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 4"),], na.rm =T, method = "euclidean")
+adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 5"),], na.rm =T, method = "euclidean")
+adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 6"),], na.rm =T, method = "euclidean")
+
+# TWR general
+adonis(duration~treatment*sample, data = TWR, method = "euclidean")
+adonis(duration~treatment*sample*batch, data = TWR, method = "euclidean")
+adonis(duration~treatment*sample, data = TWR, strata = TWR$batch, method = "euclidean")
+adonis(duration~treatment*sample*batch, data = TWR, strata = TWR$sample, method = "euclidean")
+
+adonis(contraction~treatment*sample, data = TWR, method = "euclidean")
+adonis(contraction~treatment*sample*batch, data = TWR, method = "euclidean")
+adonis(contraction~treatment*sample, data = TWR, strata = TWR$batch, method = "euclidean")
+adonis(contraction~treatment*sample*batch, data = TWR, strata = TWR$sample, method = "euclidean")
+
+#Per batch
+TWR60 <- TWR[which(TTR$batch==60),]
+TWR71 <- TWR[which(TTR$batch==71),]
+adonis(duration~treatment*sample, data = TWR60, method = "euclidean")
+adonis(duration~treatment*sample, data = TWR71, method = "euclidean")
+adonis(contraction~treatment*sample, data = TWR60, method = "euclidean")
+adonis(contraction~treatment*sample, data = TWR71, method = "euclidean")
+
+adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 2"),], method = "euclidean")
+adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 3"),], method = "euclidean")
+adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 4"),], method = "euclidean")
+adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 5"),], method = "euclidean")
+adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 6"),], method = "euclidean")
+
+adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 2"),], method = "euclidean")
+adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 3"),], method = "euclidean")
+adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 4"),], method = "euclidean")
+adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 5"),], method = "euclidean")
+adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 6"),], method = "euclidean")
+
+```
+
+
