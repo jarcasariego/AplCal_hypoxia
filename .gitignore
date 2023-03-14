@@ -12,6 +12,7 @@
 # large Output files 
 /*.tar.gz
 /*.bam
+*.bam
 
 # Output files from R CMD check
 /*.Rcheck/
