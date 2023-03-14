@@ -33,3 +33,8 @@
 .Renviron
 
 
+TagSeq/analyses/GFFcorrection_UTR/GCF_000002075.1_AplCal3.0_mitochondrial.gff
+TagSeq/analyses/GFFcorrection_UTR/GCF_000002075.1_AplCal3.0_genomic.gff
+*.fasta
+*.tmp
+*.gff
