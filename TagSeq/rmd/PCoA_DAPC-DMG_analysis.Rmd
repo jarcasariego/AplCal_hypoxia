@@ -165,6 +165,7 @@ write_delim(gene2kog,"analyses/annotation/AplCal3_gene2kog.tsv", delim = "\t")
 
 ### Create DESeqDataSet
 ```{r subset_dds}
+
 # Create full DESeqDataSet
 dds <- DESeqDataSetFromMatrix(countData = countMatrix,
                               colData = sdat,
@@ -214,7 +215,7 @@ count_summ <- read.table("data/count_totals.txt") %>%
   select(sample_ID, raw, post_qc, mapped) %>%
   gather(stage, count, -sample_ID) 
 
-# Summarize counts for only samples included in paper (sampled 2017-10-28)
+# Summarize counts for only samples
 counttable <- sdat0 %>%
   left_join(count_summ) %>%
   group_by(stage) %>%
@@ -222,7 +223,6 @@ counttable <- sdat0 %>%
             `Max. (per sample)` = max(count),
             `Median (per sample)` = median(count),
             Total = sum(count)) %>%
-  mutate_if(is_numeric, ~ format(ceiling(.), big.mark = ",")) %>%
   arrange(rev(stage))
  
 counttable <- counttable[-1,]
@@ -770,7 +770,7 @@ group.contrasts <- tibble(num = c("Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Re
                           den = c("Control","Control","Control","Control","Control","Control",
                                   "Hyp_T2h","Hyp_T6h","Hyp_T6h","Recovery","Hyp_T6h","Hyp_T6h"))
 
-# Get DESeq results for all group contrasts for each colony
+# Get DESeq results for all group contrasts for each tissue
 DE <- crossing(tissue = c("A", "Pp"), group.contrasts) %>%
   mutate(dsr = pmap(list(tissue, num, den), function(x, y, z) {
     results(dsr1, contrast = c("tissue.group", paste0(x, ".", c(y, z))))}))
@@ -801,7 +801,7 @@ DE <- DE %>% mutate(logP = map(dsr, ~ data.frame(
   gene = rownames(data.frame(.)),
   logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
 
-# Count number of differentially expressed genes within each colony, and overall, for each contrast
+# Count number of differentially expressed genes within each tissue, and overall, for each contrast
 DEtab <- DE %>%
   filter((num == "Hyp_T2h" & den == "Control")|(num == "Hyp_T6h" & den == "Control")|
          (num == "LtH_6" & den == "Control")|(num == "LtH_7" & den == "Control")|
@@ -838,7 +838,7 @@ group.contrasts <- tibble(num = c("Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Re
                           den = c("Control","Control","Control","Control","Control","Control",
                                   "Hyp_T2h","Hyp_T6h","Hyp_T6h","Recovery","Hyp_T6h","Hyp_T6h"))
 
-# Get DESeq results for all group contrasts for each colony
+# Get DESeq results for all group contrasts for each tissue
 DE_71 <- crossing(tissue = c("A", "Pp"), group.contrasts) %>%
   mutate(dsr = pmap(list(tissue, num, den), function(x, y, z) {
     results(dsr1, contrast = c("tissue.group", paste0(x, ".", c(y, z))))}))
@@ -850,7 +850,7 @@ Then, for both tissues together
 design(dds_71) <- formula(~ tissue + treatment)
 dsr2 <- DESeq(dds_71)
 
-# Get DESeq results for all contrasts and join with results from each colony, from above
+# Get DESeq results for all contrasts and join with results from each tissue, from above
 DE_71 <- crossing(tissue = "all", group.contrasts) %>%
   mutate(dsr = map2(num, den, ~ results(dsr2, contrast = c("treatment", .x, .y)))) %>%
   bind_rows(DE_71)
@@ -869,7 +869,7 @@ DE_71 <- DE_71 %>% mutate(logP = map(dsr, ~ data.frame(
   gene = rownames(data.frame(.)),
   logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
 
-# Count number of differentially expressed genes within each colony, and overall, for each contrast
+# Count number of differentially expressed genes within each tissue, and overall, for each contrast
 DEtab_71 <- DE_71 %>%
   filter((num == "Hyp_T2h" & den == "Control")|(num == "Hyp_T6h" & den == "Control")|
          (num == "LtH_6" & den == "Control")|(num == "LtH_7" & den == "Control")|
@@ -906,19 +906,19 @@ group.contrasts <- tibble(num = c("Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Re
                           den = c("Control","Control","Control","Control","Control","Control",
                                   "Hyp_T2h","Hyp_T6h","Hyp_T6h","Recovery","Hyp_T6h","Hyp_T6h"))
 
-# Get DESeq results for all group contrasts for each colony
+# Get DESeq results for all group contrasts for each batch
 DE_A <- crossing(batch = c("60", "71"), group.contrasts) %>%
   mutate(dsr = pmap(list(batch, num, den), function(x, y, z) {
     results(dsr1, contrast = c("batch.group", paste0(x, ".", c(y, z))))}))
 ```
 
-Then, for both tissues together
+Then, for both batches together
 ```{r run_DESeq_together abdominal}
 # Run DESeq pipeline 
 design(dds_A) <- formula(~ batch + treatment)
 dsr2 <- DESeq(dds_A)
 
-# Get DESeq results for all contrasts and join with results from each colony, from above
+# Get DESeq results for all contrasts and join with results from each batch, from above
 DE_A <- crossing(batch = "all", group.contrasts) %>%
   mutate(dsr = map2(num, den, ~ results(dsr2, contrast = c("treatment", .x, .y)))) %>%
   bind_rows(DE_A)
@@ -937,7 +937,7 @@ DE_A <- DE_A %>% mutate(logP = map(dsr, ~ data.frame(
   gene = rownames(data.frame(.)),
   logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
 
-# Count number of differentially expressed genes within each colony, and overall, for each contrast
+# Count number of differentially expressed genes within each batch, and overall, for each contrast
 DE_Atab <- DE_A %>%
   filter((num == "Hyp_T2h" & den == "Control")|(num == "Hyp_T6h" & den == "Control")|
          (num == "LtH_6" & den == "Control")|(num == "LtH_7" & den == "Control")|
@@ -973,19 +973,19 @@ group.contrasts <- tibble(num = c("Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Re
                           den = c("Control","Control","Control","Control","Control","Control",
                                   "Hyp_T2h","Hyp_T6h","Hyp_T6h","Recovery","Hyp_T6h","Hyp_T6h"))
 
-# Get DESeq results for all group contrasts for each colony
+# Get DESeq results for all group contrasts for each batch
 DE_Pp <- crossing(batch = c("60", "71"), group.contrasts) %>%
   mutate(dsr = pmap(list(batch, num, den), function(x, y, z) {
     results(dsr1, contrast = c("batch.group", paste0(x, ".", c(y, z))))}))
 ```
 
-Then, for both tissues together
+Then, for both batches together
 ```{r run_DESeq_together Pleural & Pedal}
 # Run DESeq pipeline 
 design(dds_Pp) <- formula(~ batch + treatment)
 dsr2 <- DESeq(dds_Pp)
 
-# Get DESeq results for all contrasts and join with results from each colony, from above
+# Get DESeq results for all contrasts and join with results from each batch, from above
 DE_Pp <- crossing(batch = "all", group.contrasts) %>%
   mutate(dsr = map2(num, den, ~ results(dsr2, contrast = c("treatment", .x, .y)))) %>%
   bind_rows(DE_Pp)
@@ -1004,7 +1004,7 @@ DE_Pp <- DE_Pp %>% mutate(logP = map(dsr, ~ data.frame(
   gene = rownames(data.frame(.)),
   logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
 
-# Count number of differentially expressed genes within each colony, and overall, for each contrast
+# Count number of differentially expressed genes within each batch, and overall, for each contrast
 DE_Pptab <- DE_Pp %>%
   filter((num == "Hyp_T2h" & den == "Control")|(num == "Hyp_T6h" & den == "Control")|
          (num == "LtH_6" & den == "Control")|(num == "LtH_7" & den == "Control")|
@@ -1249,6 +1249,7 @@ DE_71 %>%
   knitr::kable(caption = "Number of differentially expressed genes in common between abdominal and Pleural/Pedal ganglia (Batch 71)")  %>%
   kable_styling(full_width = TRUE)
 
+# Find genes that are DE in same direction in both batches when analyzed individually
 DE_A %>%
   unnest(sig) %>%
   filter(batch != "all") %>%
@@ -1274,45 +1275,51 @@ DEGs_60 <- DE %>%
   unnest(sig) %>%
   filter(tissue == "all") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  select(.,contrast, gene)
-#write_tsv(DEGs_60, path = "output/DEGs_by_contrast_batch 60_all_ganglia.tsv")
+  select(.,contrast, gene, log2FoldChange)
+write_tsv(DEGs_60, path = "output/DEGs_by_contrast_batch 60_all_ganglia.tsv")
 
 DEGs_60A <- DE %>%
   unnest(sig) %>%
   filter(tissue == "A") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  select(.,contrast, gene)
-#write_tsv(DEGs_60A, path = "output/DEGs_by_contrast_batch 60_abdominal.tsv")
+  select(.,contrast, gene, log2FoldChange)
+write_tsv(DEGs_60A, path = "output/DEGs_by_contrast_batch 60_abdominal.tsv")
 
 DEGs_60Pp <- DE %>%
   unnest(sig) %>%
   filter(tissue == "Pp") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  select(.,contrast, gene)
-#write_tsv(DEGs_60Pp, path = "output/DEGs_by_contrast_batch 60_PlePed.tsv")
+  select(.,contrast, gene, log2FoldChange)
+write_tsv(DEGs_60Pp, path = "output/DEGs_by_contrast_batch 60_PlePed.tsv")
 
-DEGs_71 <- DE %>%
+DEGs_71 <- DE_71 %>%
   unnest(sig) %>%
   filter(tissue == "all") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  select(.,contrast, gene)
-#write_tsv(DEGs_71, path = "output/DEGs_by_contrast_batch 71_all_ganglia.tsv")
+  select(.,contrast, gene, log2FoldChange)
+write_tsv(DEGs_71, path = "output/DEGs_by_contrast_batch 71_all_ganglia.tsv")
 
-DEGs_71A <- DE %>%
+DEGs_71A <- DE_71 %>%
   unnest(sig) %>%
   filter(tissue == "A") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  select(.,contrast, gene)
-#write_tsv(DEGs_71A, path = "output/DEGs_by_contrast_batch 71_abdominal.tsv")
+  select(.,contrast, gene, log2FoldChange)
+write_tsv(DEGs_71A, path = "output/DEGs_by_contrast_batch 71_abdominal.tsv")
 
-DEGs_71Pp <- DE %>%
+DEGs_71Pp <- DE_71 %>%
   unnest(sig) %>%
   filter(tissue == "Pp") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  select(.,contrast, gene)
-#write_tsv(DEGs_71Pp, path = "output/DEGs_by_contrast_batch 71_PlePed.tsv")
+  select(.,contrast, gene, log2FoldChange)
+write_tsv(DEGs_71Pp, path = "output/DEGs_by_contrast_batch 71_PlePed.tsv")
 
-
+  genes_of_interest <- c("LOC101854685","LOC101860167","LOC100533275","LOC101852344","LOC101855344","SOD")
+DEGs_60[which(DEGs_60$gene %in% genes_of_interest),]
+DEGs_60A[which(DEGs_60A$gene %in% genes_of_interest),]
+DEGs_60Pp[which(DEGs_60Pp$gene %in% genes_of_interest),]
+DEGs_71[which(DEGs_71$gene %in% genes_of_interest),]
+DEGs_71A[which(DEGs_71A$gene %in% genes_of_interest),]
+DEGs_71Pp[which(DEGs_71Pp$gene %in% genes_of_interest),]
 ```
 
 #### DEGs in common beteween peak of exposure vs Ctrl contrasts (T6h vs Ctrol, LtH_6 vs Ctrl & LtH_7 vs Ctrl) 
@@ -1320,19 +1327,24 @@ in batch 60 abdominal
 ```{r DEGs peak 60A, fig.height = 8, fig.width = 8}
 genesincommon_60A <- DE %>%
   unite("contrast", num, den, sep = ".") %>%
-  filter(tissue == "A", contrast %in% c("Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
+  filter(tissue == "A", contrast %in% c("Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control","Recovery.Control","Reox.Control")) %>%
   unnest(sig) %>%
   select(contrast, gene, log2FoldChange) %>%
   pivot_wider(names_from = contrast, values_from = log2FoldChange) %>%
   drop_na() %>%
   mutate(gene = factor(gene, levels = gene))
+
+genes_of_interest <- c("LOC101854685","LOC101860167","LOC100533275","LOC101852344","LOC101855344")
+genesincommon_60A[which(genesincommon_60A$gene %in% genes_of_interest),]  
+
+
 genesincommon_60A <- genesincommon_60A[c(1:100),]  
 # Get normalized counts for the genes in common
-gcounts <- data.frame(assay(vsd_60[which(rownames(assay(vsd_60)) %in% genesincommon_60A$gene), ]))
+gcounts <- data.frame(assay(vsd_60[which(rownames(assay(vsd_60)) %in% genesincommon_60A_int$gene), ]))
 gcounts <- rownames_to_column(gcounts, var = "gene") %>%
   pivot_longer(-gene, names_to = "sample_ID", values_to = "count") %>%
   left_join(select(sdat0, sample_ID, treatment)) %>%
-  mutate(gene = factor(gene, levels = levels(genesincommon_60A$gene))) %>%
+  mutate(gene = factor(gene, levels = levels(genesincommon_60A_int$gene))) %>%
   filter(treatment != "Control") %>%
   filter(treatment != "Hyp_T2h") %>%
   filter(treatment != "Reox") %>%
@@ -1340,7 +1352,7 @@ gcounts <- rownames_to_column(gcounts, var = "gene") %>%
 
 
 # Get group log2foldchanges for plotting
-gl2fc <- genesincommon_60A %>%
+gl2fc <- genesincommon_60A_int %>%
   pivot_longer(-gene, names_to = "treatment", values_to = "l2fc") %>%
   mutate(treatment = gsub(".Control", "", treatment))
   
@@ -1376,6 +1388,9 @@ genesincommon_60Pp <- DE %>%
   pivot_wider(names_from = contrast, values_from = log2FoldChange) %>%
   drop_na() %>%
   mutate(gene = factor(gene, levels = gene))  
+
+genesincommon_60Pp_int <- genesincommon_60Pp[which(genesincommon_60Pp$gene %in% genes_of_interest),] 
+
 # Get normalized counts for the genes in common
 gcounts <- data.frame(assay(vsd_60[which(rownames(assay(vsd_60)) %in% genesincommon_60Pp$gene), ]))
 gcounts <- rownames_to_column(gcounts, var = "gene") %>%
@@ -1417,7 +1432,7 @@ ggsave(file = "figures/FigS_shared_genes_60Pp.png", width = 360, height = 360, u
 
 in batch 71 abdominal
 ```{r DEGs peak 71A, fig.height = 8, fig.width = 8}
-genesincommon_71A <- DE %>%
+genesincommon_71A <- DE_71 %>%
   unite("contrast", num, den, sep = ".") %>%
   filter(tissue == "A", contrast %in% c("Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
   unnest(sig) %>%
@@ -1425,6 +1440,9 @@ genesincommon_71A <- DE %>%
   pivot_wider(names_from = contrast, values_from = log2FoldChange) %>%
   drop_na() %>%
   mutate(gene = factor(gene, levels = gene))
+
+genesincommon_71A_int <- genesincommon_71A[which(genesincommon_71A$gene %in% genes_of_interest),] 
+
 genesincommon_71A <- genesincommon_71A[c(1:100),]  
 # Get normalized counts for the genes in common
 gcounts <- data.frame(assay(vsd_71[which(rownames(assay(vsd_71)) %in% genesincommon_71A$gene), ]))
@@ -1467,7 +1485,7 @@ ggsave(file = "figures/FigS_shared_genes_71A.png", width = 360, height = 360, un
 
 in batch 71 Pleural/Pedal
 ```{r DEGs peak 71Pp, fig.height = 5, fig.width = 5}
-genesincommon_71Pp <- DE %>%
+genesincommon_71Pp <- DE_71 %>%
   unite("contrast", num, den, sep = ".") %>%
   filter(tissue == "Pp", contrast %in% c("Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
   unnest(sig) %>%
@@ -1475,6 +1493,9 @@ genesincommon_71Pp <- DE %>%
   pivot_wider(names_from = contrast, values_from = log2FoldChange) %>%
   drop_na() %>%
   mutate(gene = factor(gene, levels = gene))  
+
+genesincommon_71Pp_int <- genesincommon_71Pp[which(genesincommon_71Pp$gene %in% genes_of_interest),] 
+
 # Get normalized counts for the genes in common
 gcounts <- data.frame(assay(vsd_71[which(rownames(assay(vsd_71)) %in% genesincommon_71Pp$gene), ]))
 gcounts <- rownames_to_column(gcounts, var = "gene") %>%
