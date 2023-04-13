@@ -347,7 +347,7 @@ volc_plot2
 #ggsave(filename = "figures/Fig.volcano_naive_GE.png",volc_plot1, width = 15, height = 10)
 #ggsave(filename = "figures/Fig.volcano_pre-exp_GE.png",volc_plot2, width = 15, height = 10)
 ```
-
+## Only on miRNA positive transcripts
 ```{r run_DESeq_miRNA, fig.height = 10, fig.width = 15}
 # Run DESeq pipeline
 design(dds_miRNA) <- formula(~ batch.group)
