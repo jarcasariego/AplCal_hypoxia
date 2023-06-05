@@ -14,6 +14,7 @@
 /*.bam
 *.bam
 *fastq.gz
+*.cov.gz
 
 # Output files from R CMD check
 /*.Rcheck/
