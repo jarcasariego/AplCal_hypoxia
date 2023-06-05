@@ -14,7 +14,7 @@ knitr::opts_knit$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hyp
 ```{r install/load packages, include=FALSE}
 # Install if needed 
 #install.packages("BiocManager",repos="http://cran.us.r-project.org")
-#BiocManager::install(c("AnnotationDbi", "impute", "GO.db", "preprocessCore"))
+#BiocManager::install(c("AnnotationDbi", "impute", "GO.db", "preprocessCore","ComplexHeatmap"))
 #install.packages("flashClust",repos="http://cran.us.r-project.org")
 #install.packages("WGCNA",dependencies=TRUE,repos="http://cran.us.r-project.org")
 
@@ -28,7 +28,7 @@ library(DESeq2)
 library(Biobase)
 library(arrayQualityMetrics)
 library(pheatmap)
-library(ComplexHeatmap)
+library(ComplexHeatmap) #
 options(stringsAsFactors=FALSE)
 allowWGCNAThreads()
 
@@ -279,6 +279,8 @@ ht=Heatmap(moduleTraitCor, name = "Eigengene", column_title = "Module-Trait Eige
 row_names_gp = gpar(fontsize = 10, alpha = 0.75, border = TRUE, fill = htmap.colors))
 draw(ht)
 dev.off()
+
+ht
 
 ```
 # Create dataframe that associates module colors with clusters based on the above heatmap and the MEtree dendrogram.
@@ -1134,6 +1136,394 @@ expressionProfiles_P <- cowplot::plot_grid(Cluster1Plot, Cluster2Plot, Cluster3P
 ggsave("figures/SFig1-RNAseq-expressionProfiles_PleuralPedal.png", expressionProfiles_P, height = 9, width = 8, units = "in")
 expressionProfiles_P
 ```
+
+# Separate by batch and run individual networks for batch
+
+```{r separate by ganglia}
+
+#keep only naive animals
+sdat_60 <- sdat2[which(sdat2$batch == "60"),]
+counts4wgcna_60 <-counts4wgcna[, which(colnames(counts4wgcna)%in%rownames(sdat_60))]
+sdat_60$batch <- as.factor(sdat_60$tissue)
+dds_4wgcna_60 <- DESeqDataSetFromMatrix(countData = counts4wgcna_60,
+                              colData = sdat_60,
+                              design = ~ treatment+tissue+treatment:tissue)
+str(dds_4wgcna_60)
+Vsd_60=vst(dds_4wgcna_A)
+vsd.wg_60=assay(Vsd_60)
+datt_60=t(vsd.wg_60) 
+
+#keep only pre-exposed animals
+sdat_71 <- sdat2[which(sdat2$batch == "71"),]
+counts4wgcna_71 <-counts4wgcna[, which(colnames(counts4wgcna)%in%rownames(sdat_71))]
+sdat_71$batch <- as.factor(sdat_71$tissue)
+dds_4wgcna_71 <- DESeqDataSetFromMatrix(countData = counts4wgcna_71,
+                              colData = sdat_71,
+                              design = ~ treatment+tissue+treatment:tissue)
+str(dds_4wgcna_71)
+Vsd_71=vst(dds_4wgcna_71)
+vsd.wg_71=assay(Vsd_71)
+datt_71=t(vsd.wg_71) 
+
+# assembling table of QUANTITATIVE traits for both batch datasets: dummy quantitative variables instead of categorical factor levels:
+tissue=as.numeric(sdat_60$tissue=="A")
+Control=as.numeric(sdat_60$treatment=="Control")
+Hyp_T2h=as.numeric(sdat_60$treatment=="Hyp_T2h")
+Hyp_T6h=as.numeric(sdat_60$treatment=="Hyp_T6h")
+Reox=as.numeric(sdat_60$treatment=="Reox")
+Recovery=as.numeric(sdat_60$treatment=="Recovery")
+LtH_6=as.numeric(sdat_60$treatment=="LtH_6")
+LtH_7=as.numeric(sdat_60$treatment=="LtH_7")
+traits_60=data.frame(cbind(tissue,Control,Hyp_T2h,Hyp_T6h,Reox,LtH_6,LtH_7,Recovery))
+traits_60
+
+tissue=as.numeric(sdat_71$tissue=="A")
+Control=as.numeric(sdat_71$treatment=="Control")
+Hyp_T2h=as.numeric(sdat_71$treatment=="Hyp_T2h")
+Hyp_T6h=as.numeric(sdat_71$treatment=="Hyp_T6h")
+Reox=as.numeric(sdat_71$treatment=="Reox")
+Recovery=as.numeric(sdat_71$treatment=="Recovery")
+LtH_6=as.numeric(sdat_71$treatment=="LtH_6")
+LtH_7=as.numeric(sdat_71$treatment=="LtH_7")
+traits_71=data.frame(cbind(tissue,Control,Hyp_T2h,Hyp_T6h,Reox,LtH_6,LtH_7,Recovery))
+traits_71
+
+save(vsd.wg_60,sdat_60,datt_60,traits_60,file="output/data4wgcna_60.RData")
+save(vsd.wg_71,sdat_71,datt_71,traits_71,file="output/data4wgcna_71.RData")
+```
+
+```{r determine WGCNA parameters for A and P datasets}
+
+# Try different betas ("soft threshold") - power factor for calling connections between genes
+# Abdominal
+powers = c(seq(from = 2, to=26, by=1))
+# Call the network topology analysis function
+# *Decide if you want signed or unsigned network type
+sft = pickSoftThreshold(datt_60, powerVector = powers, verbose = 5,networkType="signed")
+
+# Plot the results:
+sizeGrWindow(9, 5)
+pdf("output/soft_threshold_signed_60.pdf",height=4, width=8)
+par(mfrow = c(1,2));
+cex1 = 0.9;
+# Scale-free topology fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
+main = paste("Scale independence"));
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+labels=powers,cex=cex1,col="red");
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.90,col="red")
+# Mean connectivity as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
+main = paste("Mean connectivity"))
+text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+dev.off()
+
+# 8 looks like the good threshold to use for 60
+
+# Pleural/Pedal
+powers = c(seq(from = 2, to=26, by=1))
+# Call the network topology analysis function
+# *Decide if you want signed or unsigned network type
+sft = pickSoftThreshold(datt_71, powerVector = powers, verbose = 5,networkType="signed")
+
+# Plot the results:
+sizeGrWindow(9, 5)
+pdf("output/soft_threshold_signed_71.pdf",height=4, width=8)
+par(mfrow = c(1,2));
+cex1 = 0.9;
+# Scale-free topology fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
+main = paste("Scale independence"));
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+labels=powers,cex=cex1,col="red");
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.90,col="red")
+# Mean connectivity as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
+main = paste("Mean connectivity"))
+text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+dev.off()
+
+# 10 looks like the good threshold to use for 71
+
+
+```
+
+```{r WGCNA module analysis_A}
+
+load('output/1stPassModules_60.RData')
+load('output/data4wgcna_60.RData')
+
+MEDissThres = 0.15 # in the first pass, set this to 0 - no merging (we want to see the module-traits heatmap first, then decide which modules are telling us the same story and better be merged)
+sizeGrWindow(7, 6)
+plot(METree_A, main = "Clustering of module eigengenes",
+xlab = "", sub = "")
+# Plot the cut line into the dendrogram
+abline(h=MEDissThres, col = "red")  # on 2nd pass: does this cut height meet your merging goals? If not, reset MEDissThres and replot
+
+##To choose a threshold, the Height axis will show numbers where the modules will connect together
+
+# Call an automatic merging function
+merge_A = mergeCloseModules(datt_A, dynamicColors_A, cutHeight = MEDissThres, verbose = 3)
+# The merged module colors
+mergedColors_A = merge_A$colors;
+# Eigengenes of the new merged modules:
+mergedMEs_A = merge_A$newMEs
+
+# plotting the fabulous ridiculogram
+plotDendroAndColors(geneTree_A, cbind(dynamicColors_A, mergedColors_A),
+c("Dynamic Tree Cut", "Merged dynamic"),
+dendroLabels = FALSE, hang = 0.03,
+addGuide = FALSE, guideHang = 0.05,lwd=0.3)
+
+# Rename to moduleColors
+moduleColors_A = mergedColors_A
+# Construct numerical labels corresponding to the colors
+colorOrder = c("grey", standardColors(50));
+moduleLabels_A = match(moduleColors_A, colorOrder)-1;
+MEs_A = mergedMEs_A;
+
+# Calculate dissimilarity of module eigengenes
+MEDiss_A = 1-cor(MEs_A);
+# Cluster module eigengenes
+METree_A = flashClust(as.dist(MEDiss_A), method = "average");
+# Plot the result
+sizeGrWindow(7, 6)
+plot(METree_A, main = "Clustering of module eigengenes",
+xlab = "", sub = "")
+
+# how many genes in each module?
+table(moduleColors_A)
+# Save module colors and labels for use in subsequent parts
+save(MEs_A, geneTree_A, moduleLabels_A, moduleColors_A, file = "output/networkdata_signed_A.RData")
+```
+
+```{r correlations between modules and traits for Abdominal}
+
+# plotting correlations with traits:
+load(file = "output/networkdata_signed_A.RData")
+load(file = "output/data4wgcna_A.RData")
+
+# Define numbers of genes and samples
+nGenes = ncol(datt_A);
+nSamples = nrow(datt_A);
+# Recalculate MEs with color labels
+MEs0_A = moduleEigengenes(datt_A, moduleColors_A)$eigengenes
+MEs_A = orderMEs(MEs0_A)
+
+# correlations of genes with eigengenes
+moduleGeneCor_A=cor(MEs_A,datt_A)
+moduleGenePvalue_A = corPvalueStudent(moduleGeneCor_A, nSamples);
+
+moduleTraitCor_A = cor(MEs_A, traits_A, use = "p");
+moduleTraitPvalue_A = corPvalueStudent(moduleTraitCor_A, nSamples);
+moduleTraitStars_A = cut(moduleTraitPvalue_A, breaks=c(-Inf, 0.001, 0.01, 0.05, Inf), label=c("***", "**", "*", "")) 
+
+moduleTraitTree_A = hclust(dist(t(moduleTraitCor_A)), method = "average");
+plot(moduleTraitTree_A, main = "Clustering of traits", sub="", xlab="", cex.lab = 1.5, cex.axis = 1.5, cex.main = 2)
+
+# module-trait correlations
+pdf("output/module_heatmap_A.pdf", height=14, width=10)
+textMatrix = moduleTraitStars_A;
+par(mar = c(6, 8.5, 3, 3));
+# Display the correlation values within a heatmap plot
+labeledHeatmap(Matrix = moduleTraitCor_A,
+xLabels = names(traits_A),
+yLabels = names(MEs_A),
+ySymbols = names(MEs_A),
+colorLabels = FALSE,
+colors = blueWhiteRed(50),
+textMatrix = textMatrix,
+setStdMargins = FALSE,
+cex.text = 1.5,
+zlim = c(-1,1),
+main = paste("Module-trait relationships of Abdominal ganglion"))
+dev.off()
+print(data.frame(table(moduleColors_A))) # gives numbers of genes in each module
+
+```
+
+```{r heatmap _A}
+
+#bold sig p-values
+#dendrogram with WGCNA MEtree cut-off
+#colored y-axis
+
+#Create list of pvalues for eigengene correlation with treatment
+heatmappval <- signif(moduleTraitPvalue_A, 1)
+
+#Make list of heatmap row colors
+htmap.colors <- names(MEs_A)
+htmap.colors <- gsub("ME", "", htmap.colors)
+
+pdf(file = "figures/Fig-Module-trait-relationship-heatmap_Abdominal.pdf", height = 8.5, width = 8)
+ht=Heatmap(moduleTraitCor_A, name = "Eigengene", column_title = "Module-Trait Eigengene Correlation", 
+        col = blueWhiteRed(50), 
+        row_names_side = "left", row_dend_side = "left",
+        width = unit(4, "in"), height = unit(4.5, "in"), 
+        column_order = 1:8, column_dend_reorder = FALSE,
+        cluster_rows = METree_A, row_split = 4, row_gap = unit(2.5, "mm"), border = TRUE,
+        cell_fun = function(j, i, x, y, w, h, col) {
+        if(heatmappval[i, j] <= 0.05) {
+            grid.text(sprintf("%s", heatmappval[i, j]), x, y, gp = gpar(fontsize = 8, fontface = "bold"))
+        }
+        else {
+            grid.text(sprintf("%s", heatmappval[i, j]), x, y, gp = gpar(fontsize = 8, fontface = "plain"))
+        }},
+        column_names_gp =  gpar(fontsize = 10),
+row_names_gp = gpar(fontsize = 10, alpha = 0.75, border = TRUE, fill = htmap.colors))
+draw(ht)
+dev.off()
+
+```
+
+```{r create cluster detailed dataframes Abdominal}
+MEcluster1 <- data.frame(moduleColor = c("turquoise"), moduleCluster = c(1))
+MEcluster2 <- data.frame(moduleColor = c("purple","red","blue","magenta"), moduleCluster = c(2))
+MEcluster3 <- data.frame(moduleColor = c("brown"), moduleCluster = c(3))
+MEcluster4 <- data.frame(moduleColor = c("pink","black","green"), moduleCluster = c(4))
+
+moduleCluster = bind_rows(MEcluster1, MEcluster2, MEcluster3, MEcluster4)
+head(moduleCluster)
+
+head(MEs_A)
+
+Strader_MEs_A <- MEs_A
+Strader_MEs_A$treatment <- as.character(sdat_A$treatment)
+Strader_MEs_A$sample_id <- rownames(Strader_MEs_A)
+head(Strader_MEs_A)
+
+##Calculate five over-arching expression patterns using mean eigengene for each module in a cluster
+
+
+C2_Strader_MEs_A <- select(Strader_MEs_A, MEpurple:MEmagenta)
+C2_Strader_MEs_A$Mean <- rowMeans(C2_Strader_MEs_A)
+C4_Strader_MEs_A <- select(Strader_MEs_A, MEpink:MEgreen)
+C4_Strader_MEs_A$Mean <- rowMeans(C4_Strader_MEs_A)
+
+
+expressionProfile_data_A <- as.data.frame(cbind(treatment = Strader_MEs_A$treatment, cluster1= Strader_MEs_A$MEturquoise, cluster2 = C2_Strader_MEs_A$Mean, cluster3 = Strader_MEs_A$MEbrown, cluster4 = C4_Strader_MEs_A$Mean))
+cols.num <- c(2:5)
+
+expressionProfile_data_A[cols.num] <- sapply(expressionProfile_data_A[cols.num],as.numeric)
+sapply(expressionProfile_data_A, class)
+dim(expressionProfile_data_A)
+head(expressionProfile_data_A)
+
+treatment_order <- c("Control","Hyp_T2h","Hyp_T6h","Reox","LtH_6","LtH_7","Recovery")
+
+```
+
+```{r plot cluster eigengene}
+# Plot mean module eigengene for each cluster
+
+Cluster1Plot <- expressionProfile_data_A %>%
+        select(treatment, cluster1) %>% 
+  group_by(treatment) %>% 
+  ggplot(aes(x=treatment, y=cluster1)) +
+  geom_jitter(alpha = 0.5) +
+  geom_boxplot(alpha=0) +
+        scale_x_discrete(limits=treatment_order) +
+  #ylim(-0.5,1) +
+  ylab("Mean Module Eigenegene") +
+  theme_bw() + 
+  ggtitle("Cluster 1") +
+  theme(axis.text.x=element_blank(), #set x-axis label size
+        axis.title.x=element_blank(), #set x-axis title size
+        axis.ticks.x=element_blank(), #No x-label ticks
+        axis.title.y=element_text(size = 14), #No y-axis title
+        axis.text.y=element_text(size = 14), #set y-axis label size, #No y-title
+        panel.border = element_blank(), # Set border
+        panel.grid.major = element_blank(), #Set major gridlines
+        panel.grid.minor = element_blank(), #Set minor gridlines
+        axis.line = element_line(colour = "black"), #Set axes color
+        plot.background=element_blank(),
+        plot.title = element_text(size=16)) + #Set the plot background
+  annotate("text", x = 1.2, y = 0.5, label = "n = 1", size = 4) +
+  geom_hline(yintercept = 0, linetype="dashed", color = "grey") #
+
+Cluster2Plot <- expressionProfile_data_A %>%
+        select(treatment, cluster2) %>% 
+  group_by(treatment) %>% 
+  ggplot(aes(x=treatment, y=cluster2)) +
+  geom_jitter(alpha = 0.5) +
+  geom_boxplot(alpha=0) +
+        scale_x_discrete(limits=treatment_order) +
+  #ylim(-0.5,1) +
+  ggtitle("Cluster 2") +
+  theme_bw() + 
+  theme(axis.text.x=element_blank(), #set x-axis label size
+        axis.title.x=element_blank(), #set x-axis title size
+        axis.ticks.x=element_blank(), #No x-label ticks
+        axis.title.y=element_blank(), #No y-axis title
+        axis.text.y=element_text(size = 14), #set y-axis label size, #No y-title
+        panel.border = element_blank(), # Set border
+        panel.grid.major = element_blank(), #Set major gridlines
+        panel.grid.minor = element_blank(), #Set minor gridlines
+        axis.line = element_line(colour = "black"), #Set axes color
+        plot.background=element_blank(),
+        plot.title = element_text(size=16)) + #Set the plot background
+  annotate("text", x = 1.2, y = 0.5, label = "n = 4", size = 4)  +
+  geom_hline(yintercept = 0, linetype="dashed", color = "grey") #
+Cluster3Plot <- expressionProfile_data_A %>%
+        select(treatment, cluster3) %>% 
+  group_by(treatment) %>% 
+  ggplot(aes(x=treatment, y=cluster3)) +
+  geom_jitter(alpha = 0.5) +
+  geom_boxplot(alpha=0) +
+        scale_x_discrete(limits=treatment_order) +
+  #ylim(-0.5,1) +
+  ylab("Mean Module Eigenegene") +
+  ggtitle("Cluster 3") +
+  theme_bw() + 
+ theme(axis.text.x=element_blank(), #set x-axis label size
+        axis.title.x=element_blank(), #set x-axis title size
+        axis.ticks.x=element_blank(), #No x-label ticks
+        axis.title.y=element_text(size = 14), 
+        axis.text.y=element_text(size = 14), #set y-axis label size, #No y-title
+        panel.border = element_blank(), # Set border
+        panel.grid.major = element_blank(), #Set major gridlines
+        panel.grid.minor = element_blank(), #Set minor gridlines
+        axis.line = element_line(colour = "black"), #Set axes color
+        plot.background=element_blank(),
+        plot.title = element_text(size=16)) + #Set the plot background
+  annotate("text", x = 1.2, y = 0.5, label = "n = 1", size = 4)  +
+  geom_hline(yintercept = 0, linetype="dashed", color = "grey")
+Cluster4Plot <- expressionProfile_data_A %>%
+        select(treatment, cluster4) %>% 
+  group_by(treatment) %>% 
+  ggplot(aes(x=treatment, y=cluster4)) +
+  geom_jitter(alpha = 0.5) +
+  geom_boxplot(alpha=0) +
+        scale_x_discrete(limits=treatment_order) +
+  #ylim(-0.5,1) +
+  ggtitle("Cluster 4") +
+  theme_bw() + 
+ theme(axis.text.x=element_blank(), #set x-axis label size
+        axis.title.x=element_blank(), #set x-axis title size
+        axis.ticks.x=element_blank(), #No x-label ticks
+        axis.title.y=element_blank(), #No y-axis title
+        axis.text.y=element_text(size = 14), #set y-axis label size, #No y-title
+        panel.border = element_blank(), # Set border
+        panel.grid.major = element_blank(), #Set major gridlines
+        panel.grid.minor = element_blank(), #Set minor gridlines
+        axis.line = element_line(colour = "black"), #Set axes color
+        plot.background=element_blank(),
+        plot.title = element_text(size=16)) + #Set the plot background
+  annotate("text", x = 1.2, y = 0.5, label = "n = 3", size = 4)  +
+  geom_hline(yintercept = 0, linetype="dashed", color = "grey")
+
+expressionProfiles_A <- cowplot::plot_grid(Cluster1Plot, Cluster2Plot, Cluster3Plot, Cluster4Plot, align = "v", ncol = 2, nrow = 2)
+ggsave("figures/SFig1-RNAseq-expressionProfiles_Abdominal.png", expressionProfiles_A, height = 6, width = 8, units = "in")
+
+expressionProfiles_A 
+```
+
 
 ### Summary output of network analysis results
 
