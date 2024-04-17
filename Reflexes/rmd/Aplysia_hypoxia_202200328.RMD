@@ -12,6 +12,7 @@ knitr::opts_knit$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hyp
 
 ```{r load libraries, include=FALSE}
 
+library(devtools)
 library(lubridate)
 library(dygraphs)
 library(xts)
@@ -22,10 +23,11 @@ library(patchwork) # To display 2 charts together install.packages("patchwork")
 library(hrbrthemes) # install.packages("hrbrthemes")
 library(vegan)
 library(dplyr)
-library(pairwiseAdonis)
+library(pairwiseAdonis) # install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
 library(data.table)
 library(janitor) # install.packages("janitor")
 library(chron) # install.packages("chron")
+library(ggpubr)
 
 ```
 
@@ -142,7 +144,7 @@ p3 <-ggplot(sensor_trt_mean, aes(x=time, group = 1)) +
     axis.title.y.right = element_text(size=11)
   )  
 
-ggsave("figures/DO_Temp_daily_average_plots.png", p3, width = 5, height = 3)
+ggsave("figures/DO_Temp_daily_average_plots.png", p3, width = 6, height = 3)
 
 p3
 ```
@@ -169,23 +171,23 @@ colnames(weight2)[6] <- "day_1"
 weight2$day_6 <- weight[which(weight$sample=="Day 6"), 6]
 weight2$rate <- weight2$day_6/weight2$day_1
 
-p2 <- ggplot(weight2, aes(x = treatment, y = rate, fill=batch)) +
+p2 <- ggplot(weight2, aes(x = treatment, y = rate, fill = batch)) +
   geom_boxplot() +
-  scale_fill_discrete(labels = c("lab-reared parents", "wild parents")) +
-  scale_fill_brewer(palette="Greys") + 
+  scale_fill_brewer(palette="Greys", name = "cohort", labels = c("naive", "pre-exposed")) + 
   labs(x=NULL, y = "Growth rate") +
   theme_classic()
 
-ggsave("figures/growth_rate.png", p2, width = 3, height = 3)
 
+ggsave("figures/growth_rate.png", p2, width = 4, height = 3)
+
+p2
 ```
 
 # Check significance
 ```{r}
 # PERMANOVA analyses 
 
-adonis(rate~treatment, data = weight2[which(weight2$batch == 60),], method = "euclidean")
-adonis(rate~treatment*batch, data = weight2, method = "euclidean")
+adonis2(weight2$rate~treatment*batch, data = weight2, method = "euclidean", by="term")
 
 ```
 
@@ -215,7 +217,7 @@ levels(TTR$batch)
 TTR$TTR <- as.numeric(gsub(">120", 120, TTR$TTR))
 
 p1 <- ggplot(TTR[which(TTR$batch=="60"),], aes(x=sample, y=TTR, fill = treatment)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.alpha = 0.2) +
   scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
   scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
   scale_fill_brewer(palette="Greys") + 
@@ -223,7 +225,7 @@ p1 <- ggplot(TTR[which(TTR$batch=="60"),], aes(x=sample, y=TTR, fill = treatment
   theme_classic()
 
 p4 <- ggplot(TTR[which(TTR$batch=="71"),], aes(x=sample, y=TTR, fill = treatment)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.alpha = 0.2) +
   scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
   scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
   scale_fill_brewer(palette="Greys") + 
@@ -245,7 +247,7 @@ TWR$sample <- as.factor(TWR$sample)
 levels(TWR$treatment) <- c("control", "hypoxia")
 
 p2 <- ggplot(TWR[which(TTR$batch=="60"),], aes(x=sample, y=duration, fill = treatment)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.alpha = 0.2) +
   scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
   scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
   scale_fill_brewer(palette="Greys") + 
@@ -253,7 +255,7 @@ p2 <- ggplot(TWR[which(TTR$batch=="60"),], aes(x=sample, y=duration, fill = trea
   theme_classic()
 
 p3 <- ggplot(TWR[which(TTR$batch=="60"),], aes(x=sample, y=contraction, fill = treatment)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.alpha = 0.2) +
   scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
   scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
   scale_fill_brewer(palette="Greys") + 
@@ -261,7 +263,7 @@ p3 <- ggplot(TWR[which(TTR$batch=="60"),], aes(x=sample, y=contraction, fill = t
   theme_classic()
 
 p5 <- ggplot(TWR[which(TTR$batch=="71"),], aes(x=sample, y=duration, fill = treatment)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.alpha = 0.2) +
   scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
   scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
   scale_fill_brewer(palette="Greys") + 
@@ -269,16 +271,21 @@ p5 <- ggplot(TWR[which(TTR$batch=="71"),], aes(x=sample, y=duration, fill = trea
   theme_classic()
 
 p6 <- ggplot(TWR[which(TTR$batch=="71"),], aes(x=sample, y=contraction, fill = treatment)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.alpha = 0.2) +
   scale_x_discrete(limits=c("Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7")) +
   scale_fill_discrete(name = "treatment", labels = c("control", "hypoxia")) +
   scale_fill_brewer(palette="Greys") + 
   labs(x=NULL, y = "Amplitude TWR (cm)") +
   theme_classic()
 
-ggsave("figures/reflex_plot_batch60.png", plot = grid.arrange(p1, p2, p3, ncol=3), width = 12, height = 3)
+reflex_plot <- ggarrange(p1, p2, p3, p4, p5, p6, ncol=3, nrow=2, common.legend = TRUE, legend="right")
 
-ggsave("figures/reflex_plot_batch70.png", plot = grid.arrange(p4, p5, p6, ncol=3), width = 12, height = 3)
+reflex_plot <- annotate_figure(reflex_plot, 
+                left = text_grob("Pre-exposed                                    Naïve", face = "bold", rot = 90, size = 14))
+
+ggsave("figures/reflex_plot.png", reflex_plot, width = 12, height = 6)
+
+reflex_plot
 ```
 
 
@@ -286,58 +293,87 @@ ggsave("figures/reflex_plot_batch70.png", plot = grid.arrange(p4, p5, p6, ncol=3
 ```{r}
 # PERMANOVA analyses 
 # General differences
-adonis(TTR~treatment*sample*batch, data = TTR, method = "euclidean")
-adonis(TTR~treatment*sample, data = TTR, strata = TTR$batch, method = "euclidean")
+
+adonis2(TTR$TTR~treatment*sample*batch, data = TTR, method = "euclidean")
 
 #Per batch
 TTR60 <- TTR[which(TTR$batch==60),]
 TTR71 <- TTR[which(TTR$batch==71),]
-adonis(TTR~treatment*sample, data = TTR60, method = "euclidean")
-adonis(TTR~treatment*sample, data = TTR71, method = "euclidean")
+adonis2(TTR60$TTR~treatment*sample, data = TTR60, method = "euclidean")
+adonis2(TTR71$TTR~treatment*sample, data = TTR71, method = "euclidean")
 
-# Per batch and sample date
-adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 2"),], na.rm =T, method = "euclidean")
-adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 3"),], na.rm =T, method = "euclidean")
-adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 4"),], na.rm =T, method = "euclidean")
-adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 5"),], na.rm =T, method = "euclidean")
-adonis(TTR~treatment, data = TTR60[which(TTR60$sample=="Day 6"),], na.rm =T, method = "euclidean")
-
-adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 2"),], na.rm =T, method = "euclidean")
-adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 3"),], na.rm =T, method = "euclidean")
-adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 4"),], na.rm =T, method = "euclidean")
-adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 5"),], na.rm =T, method = "euclidean")
-adonis(TTR~treatment, data = TTR71[which(TTR71$sample=="Day 6"),], na.rm =T, method = "euclidean")
+# Per batch and sample date for batch 60 that showed significant effects treatment:sample 
+adonis2(TTR60[which(TTR60$sample=="Day 2"),]$TTR~treatment, 
+       data = TTR60[which(TTR60$sample=="Day 2"),], na.rm =T, method = "euclidean")
+adonis2(TTR60[which(TTR60$sample=="Day 3"),]$TTR~treatment, 
+       data = TTR60[which(TTR60$sample=="Day 3"),], na.rm =T, method = "euclidean")
+adonis2(TTR60[which(TTR60$sample=="Day 4"),]$TTR~treatment, 
+       data = TTR60[which(TTR60$sample=="Day 4"),], na.rm =T, method = "euclidean")
+adonis2(TTR60[which(TTR60$sample=="Day 5"),]$TTR~treatment, 
+       data = TTR60[which(TTR60$sample=="Day 5"),], na.rm =T, method = "euclidean")
+adonis2(TTR60[which(TTR60$sample=="Day 6"),]$TTR~treatment, 
+       data = TTR60[which(TTR60$sample=="Day 6"),], na.rm =T, method = "euclidean")
+adonis2(TTR60[which(TTR60$sample=="Day 7"),]$TTR~treatment, 
+       data = TTR60[which(TTR60$sample=="Day 7"),], na.rm =T, method = "euclidean")
 
 # TWR general
-adonis(duration~treatment*sample, data = TWR, method = "euclidean")
-adonis(duration~treatment*sample*batch, data = TWR, method = "euclidean")
-adonis(duration~treatment*sample, data = TWR, strata = TWR$batch, method = "euclidean")
-adonis(duration~treatment*sample*batch, data = TWR, strata = TWR$sample, method = "euclidean")
+adonis2(TWR$duration~treatment*sample*batch, data = TWR, method = "euclidean", by= NULL)
+adonis2(TWR$duration~treatment*sample, data = TWR, strata = TWR$batch, method = "euclidean")
 
-adonis(contraction~treatment*sample, data = TWR, method = "euclidean")
-adonis(contraction~treatment*sample*batch, data = TWR, method = "euclidean")
-adonis(contraction~treatment*sample, data = TWR, strata = TWR$batch, method = "euclidean")
-adonis(contraction~treatment*sample*batch, data = TWR, strata = TWR$sample, method = "euclidean")
+adonis2(TWR$contraction~treatment*sample*batch, data = TWR, method = "euclidean", by = NULL)
+adonis2(TWR$contraction~treatment*sample, 
+        data = TWR, strata = TWR$batch, method = "euclidean")
 
 #Per batch
 TWR60 <- TWR[which(TTR$batch==60),]
 TWR71 <- TWR[which(TTR$batch==71),]
-adonis(duration~treatment*sample, data = TWR60, method = "euclidean")
-adonis(duration~treatment*sample, data = TWR71, method = "euclidean")
-adonis(contraction~treatment*sample, data = TWR60, method = "euclidean")
-adonis(contraction~treatment*sample, data = TWR71, method = "euclidean")
 
-adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 2"),], method = "euclidean")
-adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 3"),], method = "euclidean")
-adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 4"),], method = "euclidean")
-adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 5"),], method = "euclidean")
-adonis(duration~treatment, data = TWR60[which(TWR60$sample=="Day 6"),], method = "euclidean")
+adonis2(TWR60$duration~treatment*sample, data = TWR60, method = "euclidean")
+adonis2(TWR71$duration~treatment*sample, data = TWR71, method = "euclidean")
 
-adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 2"),], method = "euclidean")
-adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 3"),], method = "euclidean")
-adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 4"),], method = "euclidean")
-adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 5"),], method = "euclidean")
-adonis(contraction~treatment, data = TWR60[which(TWR60$sample=="Day 6"),], method = "euclidean")
+adonis2(TWR60$contraction~treatment*sample, data = TWR60, method = "euclidean")
+adonis2(TWR71$contraction~treatment*sample, data = TWR71, method = "euclidean")
+
+## Per batch and sample date for batch 60 that showed significant effects treatment:sample for both duration and contraction 
+adonis2(TWR60[which(TWR60$sample=="Day 2"),]$duration~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 2"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 3"),]$duration~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 3"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 4"),]$duration~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 4"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 5"),]$duration~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 5"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 6"),]$duration~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 6"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 7"),]$duration~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 7"),], method = "euclidean")
+
+adonis2(TWR60[which(TWR60$sample=="Day 2"),]$contraction~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 2"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 3"),]$contraction~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 3"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 4"),]$contraction~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 4"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 5"),]$contraction~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 5"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 6"),]$contraction~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 6"),], method = "euclidean")
+adonis2(TWR60[which(TWR60$sample=="Day 7"),]$contraction~treatment, 
+       data = TWR60[which(TWR60$sample=="Day 7"),], method = "euclidean")
+
+## Per batch and sample date for batch 71 that showed significant effects treatment:sample for duration only
+adonis2(TWR71[which(TWR71$sample=="Day 2"),]$duration~treatment, 
+       data = TWR71[which(TWR71$sample=="Day 2"),], method = "euclidean")
+adonis2(TWR71[which(TWR71$sample=="Day 3"),]$duration~treatment, 
+       data = TWR71[which(TWR71$sample=="Day 3"),], method = "euclidean")
+adonis2(TWR71[which(TWR71$sample=="Day 4"),]$duration~treatment, 
+       data = TWR71[which(TWR71$sample=="Day 4"),], method = "euclidean")
+adonis2(TWR71[which(TWR71$sample=="Day 5"),]$duration~treatment, 
+       data = TWR71[which(TWR71$sample=="Day 5"),], method = "euclidean")
+adonis2(TWR71[which(TWR71$sample=="Day 6"),]$duration~treatment, 
+       data = TWR71[which(TWR71$sample=="Day 6"),], method = "euclidean")
+adonis2(TWR71[which(TWR71$sample=="Day 7"),]$duration~treatment, 
+       data = TWR71[which(TWR71$sample=="Day 7"),], method = "euclidean")
 
 ```
 

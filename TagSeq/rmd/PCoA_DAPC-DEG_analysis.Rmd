@@ -23,7 +23,6 @@ library(stringr)
 library(readxl)
 library(pheatmap)
 library(RColorBrewer)
-library(variancePartition)  # BiocManager::install('variancePartition')
 library(doParallel)
 library(cowplot)
 source("analyses/GO_MWU/gomwu.functions.R")
@@ -37,8 +36,8 @@ library(Biobase)
 library(arrayQualityMetrics)
 library(vegan)
 library(ggvenn) # install.packages("ggvenn")
-if (!require(devtools)) install.packages("devtools")
-devtools::install_github("gaospecial/ggVennDiagram")
+#if (!require(devtools)) install.packages("devtools")
+#devtools::install_github("gaospecial/ggVennDiagram")
 library(ggVennDiagram)
 
 ## ggplot theme
@@ -165,6 +164,8 @@ gene2kog <- gene2kog[,c(2,13)]
 
 ### Create DESeqDataSet
 ```{r subset_dds}
+
+load("output/counts_and_meta.RData")
 
 # Create full DESeqDataSet
 dds <- DESeqDataSetFromMatrix(countData = countMatrix,
@@ -319,21 +320,21 @@ pcoa <- ggplot(mds, aes(color = treatment, shape = tissue)) +
   geom_point(size = 0.7, aes(x = `1`, y = `2`, fill = treatment, alpha = as.character(alphaval)), show.legend = F) +
   geom_point(size = 0.7, aes(x = `1`, y = `2`), fill = ifelse(mds$alphaval, "white", NA), show.legend = F) +
   scale_shape_manual(values = c(21, 24), name = "ganglia", labels = c("abdominal", "pleural & pedal")) +
-  scale_alpha_manual(values = c(1, 0), name = "batch", labels = c("lab_reared parents", "wild parents")) +
+  scale_alpha_manual(values = c(1, 0), name = "cohort", labels = c("naive", "pre-exposed")) +
   guides(shape = guide_legend(order = 2, override.aes = list(fill = "black"))) +
   guides(alpha = guide_legend(override.aes = list(shape = 21, alpha = 1, fill = c("black", "white")))) +
   labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
   theme_custom() +
-  theme(legend.spacing.y = unit(0, "cm"))
+  theme(legend.spacing.y = unit(0.2, "lines"))
 
 pcoa
 
-#ggsave(filename = "figures/Fig1.pcoa_GE.png",pcoa, width = 5, height = 5)
+ggsave(filename = "figures/Fig1.pcoa_GE.png",pcoa, width = 5, height = 5)
 ```
 
 The PCoA shows that global gene expression varies significantly by batch along PC1 and by ganglia along PC2.In order to see clear treatment effects I will perform PCoAs for each batch and ganglia
 
-```{r pcoa 60, eval = TRUE}
+```{r pcoa batch 60, eval = TRUE}
 ## Calculate distances among samples
 sampleDists <- dist(t(assay(vsd_60)), method = "manhattan")
 sampleDistMatrix <- as.matrix(sampleDists)
@@ -362,7 +363,7 @@ pcoa <- ggplot(mds, aes(color = treatment, shape = tissue)) +
   scale_color_discrete(name = "treatment") +
   labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
   theme_custom() +
-  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(1, 'lines')) +
   guides(fill=guide_legend(ncol=2)) 
 
 pcoa
@@ -400,7 +401,7 @@ pcoa <- ggplot(mds, aes(color = treatment, shape = tissue)) +
   scale_color_discrete(name = "treatment") +
   labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
   theme_custom() +
-  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(1, 'lines')) +
   guides(fill=guide_legend(ncol=2)) 
 
 pcoa
@@ -434,16 +435,16 @@ pcoa <- ggplot(mds, aes(color = treatment, shape = btch)) +
   geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
   geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
   geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
-  scale_shape_discrete(name = "batch", labels = c("lab_reared parents", "wild parents")) +
+  scale_shape_discrete(name = "cohort", labels = c("naive", "pre-exposed")) +
   scale_color_discrete(name = "treatment") +
   labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
   theme_custom() +
-  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(1, 'lines')) +
   guides(fill=guide_legend(ncol=2)) 
 
 pcoa
 
-#ggsave(filename = "figures/Fig.pcoa_Abdominal_GE.png",pcoa, width = 171, height = 110, units = "mm")
+ggsave(filename = "figures/Fig.pcoa_Abdominal_GE.png",pcoa, width = 171, height = 110, units = "mm")
 
 ```
 
@@ -472,16 +473,16 @@ pcoa <- ggplot(mds, aes(color = treatment, shape = btch)) +
   geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
   geom_point(size = 2, aes(x = c1, y = c2), show.legend = FALSE) +
   geom_point(size = 0.7, aes(x = `1`, y = `2`)) +
-  scale_shape_discrete(name = "batch", labels = c("lab_reared parents", "wild parents")) +
+  scale_shape_discrete(name = "cohort", labels = c("naive", "pre-exposed")) +
   scale_color_discrete(name = "treatment") +
   labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
   theme_custom() +
-  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(1, 'lines')) +
   guides(fill=guide_legend(ncol=2)) 
 
 pcoa
 
-#ggsave(filename = "figures/Fig.pcoa_PlePedal_GE.png",pcoa, width = 171, height = 110, units = "mm")
+ggsave(filename = "figures/Fig.pcoa_PlePedal_GE.png",pcoa, width = 171, height = 110, units = "mm")
 
 ```
 
@@ -548,7 +549,7 @@ pcoa <- ggplot(mds, aes(color = treatment)) +
   scale_color_discrete(name = "treatment") +
   labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
   theme_custom() +
-  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(1, 'lines')) +
   guides(fill=guide_legend(ncol=2)) 
 
 pcoa
@@ -584,7 +585,7 @@ pcoa <- ggplot(mds, aes(color = treatment)) +
   scale_color_discrete(name = "treatment") +
   labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
   theme_custom() +
-  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(1, 'lines')) +
   guides(fill=guide_legend(ncol=2)) 
 
 pcoa
@@ -620,7 +621,7 @@ pcoa <- ggplot(mds, aes(color = treatment)) +
   scale_color_discrete(name = "treatment") +
   labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
   theme_custom() +
-  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(0.7, 'lines')) +
+  theme(legend.spacing = unit(0, "cm"), legend.key.size = unit(1, 'lines')) +
   guides(fill=guide_legend(ncol=2)) 
 
 pcoa
@@ -754,7 +755,7 @@ The DAPC shows that despite the significant variability among ganglia, the treat
 
 # Differential expression analysis
 
-Since families and tissues appear to respond (at least on PCoA) differently to hypoxia, we should analyze differential expression in each family and tissue separately to assess their unique responses. We can also analyze differential expression across all tissue and across families together to see what responses are common.
+Since families and tissues appear to respond (at least on PCoA) differently to hypoxia, we should analyze differential expression in each family and tissue separately to assess their unique responses. We can also analyze differential expression across all tissue and across families together to see what responses are different or common.
 
 ### Run DESeq
 Starting with Batch 60 (in-house parents)
@@ -779,7 +780,7 @@ DE <- crossing(tissue = c("A", "Pp"), group.contrasts) %>%
 Then, for both tissues together
 ```{r run_DESeq_together batch 60}
 # Run DESeq pipeline 
-design(dds_60) <- formula(~ tissue + treatment)
+design(dds_60) <- formula(~ treatment)
 dsr2 <- DESeq(dds_60)
 
 # Get DESeq results for all contrasts and join with results from each colony, from above
@@ -824,6 +825,7 @@ dek <- DEtab %>% select(c(6,3:5)) %>%
   knitr::kable(format = "markdown", caption = "Number of differentially expressed genes within individual genets and across all genets for each specified contrast. DEGs identified using DESeq with an adjusted p-value < 0.1. In brackets are the numbers of significantly up- and down-regulated genes.", row.names = )
 
 dek
+
 ```
 
 Then Batch 71 (wild parents)
@@ -847,7 +849,7 @@ DE_71 <- crossing(tissue = c("A", "Pp"), group.contrasts) %>%
 Then, for both tissues together
 ```{r run_DESeq_together batch 71}
 # Run DESeq pipeline 
-design(dds_71) <- formula(~ tissue + treatment)
+design(dds_71) <- formula(~ treatment)
 dsr2 <- DESeq(dds_71)
 
 # Get DESeq results for all contrasts and join with results from each tissue, from above
@@ -895,7 +897,7 @@ dek
 ```
 
 Now within each tissue and across batches
-```{r run_DESeq_for Abdominal, warning=FALSE}
+```{r run_DESeq_for Abdominal all, warning=FALSE}
 # Run DESeq pipeline
 design(dds_A) <- formula(~ batch.group)
 dsr1 <- DESeq(dds_A)
@@ -913,7 +915,7 @@ DE_A <- crossing(batch = c("60", "71"), group.contrasts) %>%
 ```
 
 Then, for both batches together
-```{r run_DESeq_together abdominal}
+```{r run_DESeq_together abdominal all}
 # Run DESeq pipeline 
 design(dds_A) <- formula(~ batch + treatment)
 dsr2 <- DESeq(dds_A)
@@ -926,7 +928,7 @@ DE_A <- crossing(batch = "all", group.contrasts) %>%
 
 
 ### Get significant DEGs
-```{r get_DEgenes Abdominal}
+```{r get_DEgenes Abdominal all}
 DE_A <- DE_A %>%
   mutate(sig = map(dsr, ~ rownames_to_column(data.frame(.[which(.$padj < 0.01), ]), "gene")),
           up = map(sig, ~ filter(., log2FoldChange > 0)),
@@ -962,7 +964,7 @@ dek <- DE_Atab %>% select(c(6,3:5)) %>%
 dek
 ```
 
-```{r run_DESeq_for Pleural/Pedal, warning=FALSE}
+```{r run_DESeq_for Pleural/Pedal all, warning=FALSE}
 # Run DESeq pipeline
 design(dds_Pp) <- formula(~ batch.group)
 dsr1 <- DESeq(dds_Pp)
@@ -980,7 +982,7 @@ DE_Pp <- crossing(batch = c("60", "71"), group.contrasts) %>%
 ```
 
 Then, for both batches together
-```{r run_DESeq_together Pleural & Pedal}
+```{r run_DESeq_together Pleural & Pedal all}
 # Run DESeq pipeline 
 design(dds_Pp) <- formula(~ batch + treatment)
 dsr2 <- DESeq(dds_Pp)
@@ -993,7 +995,7 @@ DE_Pp <- crossing(batch = "all", group.contrasts) %>%
 
 
 ### Get significant DEGs
-```{r get_DEgenes Pleural & Pedal}
+```{r get_DEgenes Pleural & Pedal all}
 DE_Pp <- DE_Pp %>%
   mutate(sig = map(dsr, ~ rownames_to_column(data.frame(.[which(.$padj < 0.01), ]), "gene")),
           up = map(sig, ~ filter(., log2FoldChange > 0)),
@@ -1024,6 +1026,96 @@ DE_Pptab <- DE_Pp %>%
 
 DE_Pptab$contrast <- paste(DE_Pptab$num, DE_Pptab$den, sep = " vs ")
 dek <- DE_Pptab %>% select(c(6,3:5)) %>%
+  knitr::kable(format = "markdown", caption = "Number of differentially expressed genes within individual genets and across all genets for each specified contrast. DEGs identified using DESeq with an adjusted p-value < 0.1. In brackets are the numbers of significantly up- and down-regulated genes.", row.names = )
+
+dek
+```
+
+Compare batches, tissues, and per treatment (how different is their response)
+```{r run_DESeq_for Abdominal, warning=FALSE}
+# Run DESeq pipeline
+design(dds_A) <- formula(~ batch.group)
+dsr1 <- DESeq(dds_A)
+
+# Define group contrasts
+group.contrasts <- tibble(num = c("60"),
+                          den = c("71"))
+
+# Get DESeq results for all batch contrasts for each treatment
+DE_A_batch <- crossing(treatment = c("Control", "Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Recovery"), group.contrasts) %>%
+  mutate(dsr = pmap(list(treatment, num, den), function(x, y, z) {
+    results(dsr1, contrast = c("batch.group", paste0(c(y, z), ".", x)))}))
+```
+
+
+### Get significant DEGs
+```{r get_DEgenes Abdominal}
+DE_A_batch <- DE_A_batch %>%
+  mutate(sig = map(dsr, ~ rownames_to_column(data.frame(.[which(.$padj < 0.01), ]), "gene")),
+          up = map(sig, ~ filter(., log2FoldChange > 0)),
+        down = map(sig, ~ filter(., log2FoldChange < 0))) 
+
+# Generate logP values for all differential expression contrasts
+DE_A_batch <- DE_A_batch %>% mutate(logP = map(dsr, ~ data.frame(
+  gene = rownames(data.frame(.)),
+  logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
+
+# Count number of differentially expressed genes within each batch, and overall, for each contrast
+DE_A_batch_tab <- DE_A_batch %>%
+  filter((num == "60" & den == "71")) %>%
+  mutate(nsig = map_dbl( sig, ~ nrow(.)),
+          nup = map_dbl(  up, ~ nrow(.)),
+          ndn = map_dbl(down, ~ nrow(.)),
+          `DEGs [up, down]` = paste0(nsig, " [", nup, ", ", ndn, "]")) %>%
+  select(treatment, num, den, `DEGs [up, down]`) %>%
+  spread(treatment, `DEGs [up, down]`)
+
+DE_A_batch_tab$contrast <- paste(DE_A_batch_tab$num, DE_A_batch_tab$den, sep = " vs ")
+dek <- DE_A_batch_tab %>% select(c(10,3:9)) %>%
+  knitr::kable(format = "markdown", caption = "Number of differentially expressed genes within individual genets and across all genets for each specified contrast. DEGs identified using DESeq with an adjusted p-value < 0.1. In brackets are the numbers of significantly up- and down-regulated genes.", row.names = )
+
+dek
+```
+
+```{r run_DESeq_for Pleural/Pedal, warning=FALSE}
+# Run DESeq pipeline
+design(dds_Pp) <- formula(~ batch.group)
+dsr1 <- DESeq(dds_Pp)
+
+# Define group contrasts
+group.contrasts <- tibble(num = c("60"),
+                          den = c("71"))
+
+# Get DESeq results for all batch contrasts for each treatment
+DE_Pp_batch <- crossing(treatment = c("Control", "Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Recovery"), group.contrasts) %>%
+  mutate(dsr = pmap(list(treatment, num, den), function(x, y, z) {
+    results(dsr1, contrast = c("batch.group", paste0(c(y, z), ".", x)))}))
+```
+
+### Get significant DEGs
+```{r get_DEgenes Pleural & Pedal}
+DE_Pp_batch <- DE_Pp_batch %>%
+  mutate(sig = map(dsr, ~ rownames_to_column(data.frame(.[which(.$padj < 0.01), ]), "gene")),
+          up = map(sig, ~ filter(., log2FoldChange > 0)),
+        down = map(sig, ~ filter(., log2FoldChange < 0))) 
+
+# Generate logP values for all differential expression contrasts
+DE_Pp_batch <- DE_Pp_batch %>% mutate(logP = map(dsr, ~ data.frame(
+  gene = rownames(data.frame(.)),
+  logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
+
+# Count number of differentially expressed genes within each batch, and overall, for each contrast
+DE_Pp_batch_tab <- DE_Pp_batch %>%
+  filter((num == "60" & den == "71")) %>%
+  mutate(nsig = map_dbl( sig, ~ nrow(.)),
+          nup = map_dbl(  up, ~ nrow(.)),
+          ndn = map_dbl(down, ~ nrow(.)),
+          `DEGs [up, down]` = paste0(nsig, " [", nup, ", ", ndn, "]")) %>%
+  select(treatment, num, den, `DEGs [up, down]`) %>%
+  spread(treatment, `DEGs [up, down]`)
+
+DE_Pp_batch_tab$contrast <- paste(DE_Pp_batch_tab$num, DE_Pp_batch_tab$den, sep = " vs ")
+dek <- DE_Pp_batch_tab %>% select(c(10,3:9)) %>%
   knitr::kable(format = "markdown", caption = "Number of differentially expressed genes within individual genets and across all genets for each specified contrast. DEGs identified using DESeq with an adjusted p-value < 0.1. In brackets are the numbers of significantly up- and down-regulated genes.", row.names = )
 
 dek
@@ -1124,11 +1216,44 @@ gv6 <- ggvenn(DEGs_Pp_wide, fill_color = c("#0073C2FF", "#EFC000FF"),
   )
 gv6
 ggsave("figures/Pp_DEGs_vennDiagram.png", gv6, height = 3, width = 5)
+
+#graph DEGs between batches across all treatments
+
+DEGs_A_batch <- DE_A_batch %>%
+  unnest(sig) %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  select(.,contrast, gene, treatment)
+DEGs_A_batch_wide <- list(Control=pull(DEGs_A_batch[which(DEGs_A_batch$treatment=="Control"),2]),
+                 Hyp_6h=pull(DEGs_A_batch[which(DEGs_A_batch$treatment=="Hyp_T6h"),2]),
+                 Hyp_T6d=pull(DEGs_A_batch[which(DEGs_A_batch$treatment=="LtH_6"),2]),
+                 Recovery=pull(DEGs_A_batch[which(DEGs_A_batch$treatment=="Recovery"),2]))
+str(DEGs_A_batch_wide)
+gv7 <- ggvenn(DEGs_A_batch_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv7
+ggsave("figures/A_Between_batch_DEGs_vennDiagram.png", gv7, height = 3, width = 5)
+
+DEGs_Pp_batch <- DE_Pp_batch %>%
+  unnest(sig) %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  select(.,contrast, gene, treatment)
+DEGs_Pp_batch_wide <- list(Control=pull(DEGs_Pp_batch[which(DEGs_Pp_batch$treatment=="Control"),2]),
+                 Hyp_6h=pull(DEGs_Pp_batch[which(DEGs_Pp_batch$treatment=="Hyp_T6h"),2]),
+                 Hyp_T6d=pull(DEGs_Pp_batch[which(DEGs_Pp_batch$treatment=="LtH_6"),2]),
+                 Recovery=pull(DEGs_Pp_batch[which(DEGs_Pp_batch$treatment=="Recovery"),2]))
+str(DEGs_Pp_batch_wide)
+gv8 <- ggvenn(DEGs_Pp_batch_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv8
+ggsave("figures/Pp_Between_batch_DEGs_vennDiagram.png", gv8, height = 3, width = 5)
+
 ```
 
 
 ### DEG Similarities
-Similarity of differentially expressed genes across tissue and contrasts
+Similarity of DEGs direction across tissue and contrasts
 
 ##### DEGs in common across tissues and batches
 ```{r DEgenes_comparison}
@@ -1215,28 +1340,32 @@ DEGs_71Pp <- DE_71 %>%
   select(.,contrast, gene, log2FoldChange)
 write_tsv(DEGs_71Pp, path = "output/DEGs_by_contrast_batch 71_PlePed.tsv")
 
-  genes_of_interest <- c("LOC101854685","LOC101860167","LOC100533275","LOC101852344","LOC101855344","SOD")
-DEGs_60[which(DEGs_60$gene %in% genes_of_interest),]
-DEGs_60A[which(DEGs_60A$gene %in% genes_of_interest),]
-DEGs_60Pp[which(DEGs_60Pp$gene %in% genes_of_interest),]
-DEGs_71[which(DEGs_71$gene %in% genes_of_interest),]
-DEGs_71A[which(DEGs_71A$gene %in% genes_of_interest),]
-DEGs_71Pp[which(DEGs_71Pp$gene %in% genes_of_interest),]
+DEGs_A_batch <- DE_A_batch %>%
+  unnest(sig) %>%
+  mutate(contrast = paste(num, treatment, den, treatment, sep = ".")) %>%
+  select(.,contrast, gene, log2FoldChange)
+write_tsv(DEGs_A_batch, path = "output/DEGs_by_treat_batch_contrasts_Abdominal.tsv")
+
+DEGs_Pp_batch <- DE_Pp_batch %>%
+  unnest(sig) %>%
+  mutate(contrast = paste(num, treatment, den, treatment, sep = ".")) %>%
+  select(.,contrast, gene, log2FoldChange)
+write_tsv(DEGs_Pp_batch, path = "output/DEGs_by_treat_batch_contrasts_PlePed.tsv")
 ```
 
-#### DEGs in common beteween peak of exposure vs Ctrl contrasts (T6h vs Ctrol, LtH_6 vs Ctrl & LtH_7 vs Ctrl) 
+
+#### DEGs in common between peak of exposure vs Ctrl contrasts (T6h vs Ctrol, LtH_6 vs Ctrl & LtH_7 vs Ctrl) 
 in batch 60 abdominal
 ```{r DEGs peak 60A, fig.height = 8, fig.width = 8}
 genesincommon_60A <- DE %>%
   unite("contrast", num, den, sep = ".") %>%
-  filter(tissue == "A", contrast %in% c("Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control","Recovery.Control","Reox.Control")) %>%
+  filter(tissue == "A", contrast %in% c("Hyp_T2h.Control","Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control","Recovery.Control","Reox.Control")) %>%
   unnest(sig) %>%
   select(contrast, gene, log2FoldChange) %>%
   pivot_wider(names_from = contrast, values_from = log2FoldChange) %>%
   drop_na() %>%
   mutate(gene = factor(gene, levels = gene))
 
-genesincommon_60A <- genesincommon_60A[c(1:100),]  
 # Get normalized counts for the genes in common
 gcounts <- data.frame(assay(vsd_60[which(rownames(assay(vsd_60)) %in% genesincommon_60A$gene), ]))
 gcounts <- rownames_to_column(gcounts, var = "gene") %>%
@@ -1244,7 +1373,7 @@ gcounts <- rownames_to_column(gcounts, var = "gene") %>%
   left_join(select(sdat0, sample_ID, treatment)) %>%
   mutate(gene = factor(gene, levels = levels(genesincommon_60A$gene)))
 
-# Get group log2foldchanges for plotting
+# Get group log2fold changes for plotting
 gl2fc <- genesincommon_60A %>%
   pivot_longer(-gene, names_to = "treatment", values_to = "l2fc") %>%
   mutate(treatment = gsub(".Control", "", treatment))
@@ -1425,6 +1554,14 @@ plotgcounts
 ggsave(file = "figures/FigS_shared_genes_71Pp.png", width = 360, height = 360, units = "mm")
 
 ```
+
+  genes_of_interest <- c("LOC101854685","LOC101860167","LOC100533275","LOC101852344","LOC101855344","SOD")
+DEGs_60[which(DEGs_60$gene %in% genes_of_interest),]
+DEGs_60A[which(DEGs_60A$gene %in% genes_of_interest),]
+DEGs_60Pp[which(DEGs_60Pp$gene %in% genes_of_interest),]
+DEGs_71[which(DEGs_71$gene %in% genes_of_interest),]
+DEGs_71A[which(DEGs_71A$gene %in% genes_of_interest),]
+DEGs_71Pp[which(DEGs_71Pp$gene %in% genes_of_interest),]
 
 # GO enrichment analysis
 

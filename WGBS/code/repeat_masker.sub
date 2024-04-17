@@ -1,0 +1,41 @@
+#!/bin/bash
+#SBATCH --qos highmem1
+#SBATCH --account=iacc_jeirinlo
+#SBATCH --partition IB_44C_512G
+
+# Number of nodes
+#SBATCH -N 1
+
+# Number of tasks
+#SBATCH -n 16
+
+
+##########################################################
+# Setup envrionmental variable. 
+##########################################################
+export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
+. $MODULESHOME/../global/profile.modules
+module load RepeatMasker-4.1.0
+pwd; hostname; date
+ 
+echo "Running program on $SLURM_CPUS_ON_NODE CPU cores"
+
+##########################################################
+
+# FastA URL
+fasta="/scratch/jeirinlo/jrodr979/ACAL_meth/genome/unplaced.scaf.fna"
+
+# Run RepeatMasker
+
+echo ""
+echo "Running RepeatMasker. This may take awhile."
+echo ""
+RepeatMasker \
+"${fasta}" \
+-species "all" \
+-par 16 \
+-gff \
+-excln \
+1> stdout.txt \
+2> stderr.txt
+echo "All done! Check stderr.txt for any problems."

@@ -290,7 +290,7 @@ AC186,H,60,H6,Day 5,7.3,13.5,11,0.81,20.9,weak reflex
 AC163,C,60,C1,Day 6,8.1,14,8,0.57,5.2,
 AC163,C,60,C1,Day 6,3.8,13,7,0.54,8.5,
 AC163,C,60,C1,Day 6,3.4,13.5,7,0.52,18.2,
-AC164,C,60,C1,Day 6,4.7,15,9,0.60,18.6,
+AC164,C,60,C1,Day 6,4.7,15,9,0.6,18.6,
 AC164,C,60,C1,Day 6,8.8,16,10,0.63,40.8,
 AC164,C,60,C1,Day 6,6.9,16,11,0.69,7.6,TWR tr3 inked
 AC165,C,71,C2,Day 6,2.6,13.5,8.5,0.63,8,
@@ -324,10 +324,10 @@ AC174,C,71,C6,Day 6,12.4,16,10.5,0.66,17.5,TWR tr1 inked
 AC174,C,71,C6,Day 6,3.3,16.5,9.5,0.58,5,
 AC174,C,71,C6,Day 6,5.3,15.5,9,0.58,6.1,TWR tr3 inked
 AC175,H,71,H1,Day 6,4.2,13,8.5,0.65,6,
-AC175,H,71,H1,Day 6,4.7,14,7,0.50,5,
+AC175,H,71,H1,Day 6,4.7,14,7,0.5,5,
 AC175,H,71,H1,Day 6,2.5,13,9,0.69,3.9,
 AC176,H,71,H1,Day 6,3.4,16,9,0.56,8.9,
-AC176,H,71,H1,Day 6,7.3,15,9,0.60,15.9,
+AC176,H,71,H1,Day 6,7.3,15,9,0.6,15.9,
 AC176,H,71,H1,Day 6,3.4,16,11,0.69,7.3,
 AC177,H,60,H2,Day 6,12.5,13,10.5,0.81,26.4,TWR tr1 weak contraction
 AC177,H,60,H2,Day 6,4.8,14,11,0.79,8.6,TWR tr2 weak contraction
@@ -336,19 +336,19 @@ AC178,H,60,H2,Day 6,117.3,16,12,0.75,17.7,TTR tr1 exploring
 AC178,H,60,H2,Day 6,14.3,17,10,0.59,27.29,
 AC178,H,60,H2,Day 6,11.2,17,11.5,0.68,38.4,TWR tr3 inked
 AC179,H,71,H3,Day 6,5.6,15,11,0.73,5.7,TWR tr1 weak contraction
-AC179,H,71,H3,Day 6,3.8,13.4,12,0.90,5.8,TWR tr2 weak contraction
-AC179,H,71,H3,Day 6,7.3,14.5,13,0.90,,TWR tr3 Unresponsive
+AC179,H,71,H3,Day 6,3.8,13.4,12,0.9,5.8,TWR tr2 weak contraction
+AC179,H,71,H3,Day 6,7.3,14.5,13,0.9,,TWR tr3 Unresponsive
 AC180,H,71,H3,Day 6,7.2,16,11,0.69,6.5,
 AC180,H,71,H3,Day 6,3.2,15.5,9,0.58,13.1,
 AC180,H,71,H3,Day 6,3.3,17.5,11,0.63,5.8,
 AC181,H,60,H4,Day 6,5.9,13,11,0.85,22.3,TWR tr1 weak contraction
 AC181,H,60,H4,Day 6,4.7,13,10,0.77,14.1,TWR tr2 inked
 AC181,H,60,H4,Day 6,5.2,13,11,0.85,25.3,TWR tr3 slow but full contraction
-AC182,H,60,H4,Day 6,111.6,17,17,1.00,,"TTR tr1 very slow, wont curve"
+AC182,H,60,H4,Day 6,111.6,17,17,1,,"TTR tr1 very slow, wont curve"
 AC182,H,60,H4,Day 6,5.2,17,15,0.88,34.3,TWR tr1 and 2 Unresponsive
 AC182,H,60,H4,Day 6,4.6,,,,,
-AC183,H,71,H5,Day 6,10.6,14,14,1.00,,TWR tr1 Unresponsive
-AC183,H,71,H5,Day 6,5.1,13,13,1.00,,TWR tr2 Unresponsive
+AC183,H,71,H5,Day 6,10.6,14,14,1,,TWR tr1 Unresponsive
+AC183,H,71,H5,Day 6,5.1,13,13,1,,TWR tr2 Unresponsive
 AC183,H,71,H5,Day 6,6.1, ,,,,
 AC184,H,71,H5,Day 6,4.2,15,10,0.67,16.7,
 AC184,H,71,H5,Day 6,4.2,15,11,0.73,6.1,
@@ -359,8 +359,26 @@ AC185,H,60,H6,Day 6,8.7,12.5,10.5,0.84,9.7,TWR tr3 slow and incomplete contracti
 AC186,H,60,H6,Day 6,4.6,16.5,13,0.79,8.4,TWR tr1 weak contraction
 AC186,H,60,H6,Day 6,26.4,16,13,0.81,12.5,TWR tr2 weak contraction
 AC186,H,60,H6,Day 6,4.4,14,9.5,0.68,29.8,TTR tr2 Slow not attaching
+AC163,C,60,C1,Day 7,8.1,14,8,0.57,5.2,
+AC163,C,60,C1,Day 7,3.8,13,7,0.54,8.5,
+AC163,C,60,C1,Day 7,3.4,13.5,7,0.52,18.2,
+AC164,C,60,C1,Day 7,4.7,15,9,0.6,18.6,
+AC164,C,60,C1,Day 7,8.8,16,10,0.63,40.8,
+AC164,C,60,C1,Day 7,6.9,16,11,0.69,7.6,TWR tr3 inked
+AC165,C,71,C2,Day 7,2.6,13.5,8.5,0.63,8,
+AC165,C,71,C2,Day 7,4.9,12,6.59,0.55,6.7,TWR tr2 inked
+AC165,C,71,C2,Day 7,5.6,14,9,0.64,8.6,TWR tr3 inked
+AC168,C,60,C3,Day 7,6.1,14,10,0.71,22.8,
+AC168,C,60,C3,Day 7,4.9,13,9,0.69,5.7,
+AC168,C,60,C3,Day 7,4.1,15,9.5,0.63,12,
+AC173,C,71,C6,Day 7,4.5,12,8,0.67,15,
+AC173,C,71,C6,Day 7,3.1,12,8,0.67,11.7,
+AC173,C,71,C6,Day 7,25.8,12.5,8,0.64,10.1,
+AC174,C,71,C6,Day 7,12.4,16,10.5,0.66,17.5,TWR tr1 inked
+AC174,C,71,C6,Day 7,3.3,16.5,9.5,0.58,5,
+AC174,C,71,C6,Day 7,5.3,15.5,9,0.58,6.1,TWR tr3 inked
 AC175,H,71,H1,Day 7,3.63,15.5,12,0.77,5.81,TWR tr1 weak contraction
-AC175,H,71,H1,Day 7,3.34,15,9,0.60,4.78,
+AC175,H,71,H1,Day 7,3.34,15,9,0.6,4.78,
 AC175,H,71,H1,Day 7,3.71,14.5,10,0.69,5.4,
 AC176,H,71,H1,Day 7,3.78,15,10,0.67,11,
 AC176,H,71,H1,Day 7,4.41,16,11,0.69,7.53,

@@ -63,6 +63,7 @@ colnames(all_DMR_100bp)[1] <- "chr"
 all_DMR_250bp<-read.csv("data/DMR_counts/all_exp_DMR250bp_cov10x_rms_results_collapsed.tsv", sep = "\t", header = TRUE)
 colnames(all_DMR_250bp)[1] <- "chr"
 
+
 ```
 
 ```{r prepare data for analysis}
@@ -96,6 +97,8 @@ row.names(perc_meth_100) <- perc_methDMR_100$ID
 
 Naive_perc_meth_100 <- perc_meth_100[,colnames(perc_meth_100) %in% naive_samples]
 pre_exposed_perc_meth_100 <- perc_meth_100[,colnames(perc_meth_100) %in% pre_exposed_samples]
+
+save(all_DMR_100bp, perc_meth_100, meta, Naive_perc_meth_100, pre_exposed_perc_meth_100, file = "output/DMR_data.RData")
 ```
 
 ```{r pcoa manhatan distance on raw percent data}
@@ -203,7 +206,7 @@ pcoa <- ggplot(mds, aes(color = Treatment)) +
 
 pcoa
 
-ggsave(filename = "figures/Fig_pcoa_DMR_naive.png",pcoa, width = 109, height = 84.5, units = "mm")
+ggsave(filename = "figures/Fig_pcoa_DMR_preexposed.png",pcoa, width = 109, height = 84.5, units = "mm")
 
 ```
 
@@ -403,7 +406,7 @@ dapc.fig <-
 dapc.fig
 
 
-ggsave(filename = "figures/DAPC_DMR_60.png", plot = dapc.fig, width = 109, height = 84.5, units = "mm")
+ggsave(filename = "figures/DAPC_DMR_naive.png", plot = dapc.fig, width = 109, height = 84.5, units = "mm")
 
 ```
 
@@ -482,3 +485,4 @@ dapc.fig
 ggsave(filename = "figures/DAPC_DMR_pre_exposed.png", plot = dapc.fig, width = 109, height = 84.5, units = "mm")
 
 ```
+

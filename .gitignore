@@ -3,8 +3,8 @@
 .Rapp.history
 
 # Session Data files
-.RData
-.RDataTmp
+*.RData
+*.RDataTmp
 
 # User-specific files
 .Ruserdata
@@ -40,3 +40,7 @@ TagSeq/analyses/GFFcorrection_UTR/GCF_000002075.1_AplCal3.0_genomic.gff
 *.fasta
 *.tmp
 *.gff
+*.tab
+*_filt
+*.bed
+

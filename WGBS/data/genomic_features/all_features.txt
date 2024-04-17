@@ -1,0 +1,14 @@
+ 256804 exon
+ 236180 CDS
+  64268 cDNA_match
+  26667 mRNA
+  21467 gene
+   4332 region
+   1667 lnc_RNA
+    421 tRNA
+    229 transcript
+    110 snoRNA
+     70 pseudogene
+     66 snRNA
+     30 rRNA
+      3 guide_RNA
