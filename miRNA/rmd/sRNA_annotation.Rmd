@@ -143,24 +143,21 @@ perl sRNAmapper.pl \
 -genome ${genome}/unplaced.scaf.fasta \
 -alignments best
 
-# option 2
 
-seqmap 3 seq.fasta.collapsed.no-dust genome.fas seq.fasta.collapsed.no-dust.map /output_all_matches
-
-perl seqmap_filter.pl seq.fasta.collapsed.no-dust.map 1 2
-
-# define origin for multiple mapping reads
+# define origin for multiple mapping reads, reallocate will improve cluster prediction
 
 perl reallocate.pl merged_preproc.map 10000 1000 b 0 
 
-# run proTRAC
+# run proTRAC to ID piRNA clusters
 perl proTRAC_2.4.2.pl \
--map merged_preproc.map \
+-map merged_preproc.map.weighted-10000-1000-b-0 \
 -genome ${genome}/unplaced.scaf.fna \
 -repeatmasker ${genome}/unplaced.scaf.fna.out \
 -geneset ${genome}/genomic.gtf 
 
-
+## Comming soon!!!
+# map individual samples to genome and quantify reads/cluster
+# Search for reverse homology with genes for potential interaction
 
 ```
 
