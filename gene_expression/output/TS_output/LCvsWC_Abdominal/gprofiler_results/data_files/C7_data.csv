@@ -1,0 +1,5 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0499879862206434,1,3,1,0.333333333333333,1,CORUM:7510,CORUM,IL1RAP-KIT complex,3383,2865,CORUM:0000000
+2,query_1,TRUE,0.0331759556802338,5,55,2,0.0363636363636364,0.4,GO:0004185,GO:MF,serine-type carboxypeptidase activity,20212,661,GO:0004180/GO:0070008
+3,query_1,TRUE,0.0496769782582962,6,55,2,0.0363636363636364,0.333333333333333,GO:0004064,GO:MF,arylesterase activity,20212,556,GO:0052689
+4,query_1,TRUE,0.035997036258116,8,26,2,0.0769230769230769,0.25,WP:WP136,WP,Phase I biotransformations non P450,8286,11,WP:000000

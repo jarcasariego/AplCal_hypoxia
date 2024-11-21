@@ -1,0 +1,4 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0184997366538239,38,24,3,0.125,0.0789473684210526,GO:1903670,GO:BP,regulation of sprouting angiogenesis,21031,23788,GO:0002040/GO:0045765
+2,query_1,TRUE,0.0321877948240208,6,24,2,0.0833333333333333,0.333333333333333,GO:0060831,GO:BP,smoothened signaling pathway involved in dorsal/ventral neural tube patterning,21031,15454,GO:0007224/GO:0021904
+3,query_1,TRUE,0.0450314901352661,7,24,2,0.0833333333333333,0.285714285714286,GO:1903998,GO:BP,regulation of eating behavior,21031,24056,GO:0042755/GO:0060259

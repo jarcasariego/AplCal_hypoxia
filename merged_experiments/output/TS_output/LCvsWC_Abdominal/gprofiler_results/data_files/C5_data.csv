@@ -1,0 +1,2 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0499316934433704,1,5,1,0.2,1,CORUM:7510,CORUM,IL1RAP-KIT complex,3383,2865,CORUM:0000000

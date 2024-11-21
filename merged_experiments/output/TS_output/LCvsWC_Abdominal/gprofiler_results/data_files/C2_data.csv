@@ -1,0 +1,2 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0143057667773306,4213,57,24,0.421052631578947,0.00569665321623546,GO:0005576,GO:CC,extracellular region,22097,198,GO:0110165

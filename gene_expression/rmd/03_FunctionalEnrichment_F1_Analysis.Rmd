@@ -1,0 +1,967 @@
+---
+title: "Functional enrichment"
+author: "Javier Rodriguez Casariego"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+```{r knitr_setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+knitr::opts_knit$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+
+```{r load result objects and orgDb}
+library(clusterProfiler)
+library(ggplot2)
+library(enrichplot) 
+library(AnnotationHub)
+library(tidyverse)
+library(org.Hs.eg.db)
+library(pathview)
+
+ah <- AnnotationHub()
+org.Acal.eg.db <- ah[["AH118618"]]
+load("gene_expression/data/Annotation/ACAL_annot_GO_KEGG.Rdata")
+AcTxAnot2 <- read.delim("gene_expression/data/Annotation/Acal_full_annot.txt")
+
+```
+
+# Wild hypoxia response cluster functional enrichments
+```{r fig.height=8, fig.width= 9}
+library(DOSE)
+
+# Abdominal
+gc_A <- list(A1 = rownames(res.A_clusters[res.A_clusters$clust == "A1",]),
+             A2 = rownames(res.A_clusters[res.A_clusters$clust == "A2",]),
+             A3 = rownames(res.A_clusters[res.A_clusters$clust == "A3",]),
+             A4 = rownames(res.A_clusters[res.A_clusters$clust == "A4",]),
+             A5 = rownames(res.A_clusters[res.A_clusters$clust == "A5",]),
+             A6 = rownames(res.A_clusters[res.A_clusters$clust == "A6",]),
+             A7 = rownames(res.A_clusters[res.A_clusters$clust == "A7",]),
+             A8 = rownames(res.A_clusters[res.A_clusters$clust == "A8",]),
+             A9 = rownames(res.A_clusters[res.A_clusters$clust == "A9",]),
+             A10 = rownames(res.A_clusters[res.A_clusters$clust == "A10",]),
+             A11 = rownames(res.A_clusters[res.A_clusters$clust == "A11",]),
+             A12 = rownames(res.A_clusters[res.A_clusters$clust == "A12",]),
+             A13 = rownames(res.A_clusters[res.A_clusters$clust == "A13",]))
+
+
+ck_A <- compareCluster(geneCluster = gc_A, 
+                       fun = enrichGO, 
+                       universe = names(gene_list),
+                       OrgDb = org.Acal.eg.db,
+                       keyType  = "SYMBOL",
+                       ont   = "BP",
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.05,
+                       qvalueCutoff  = 0.05,
+                       readable = TRUE)
+
+head(ck_A) 
+
+dotplot_A <- dotplot(ck_A, showCategory = 3, label_format = 50)
+ggsave(plot = dotplot_A,filename = "gene_expression/output/DE_wild/Abdominal/dotplot_GO_clusters.png",width = 9,height=10)
+
+# Pleural/Pedal
+gc_P <- list(P1 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P1",]),
+             P2 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P2",]),
+             P3 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P3",]),
+             P4 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P4",]),
+             P5 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P5",]))
+
+
+ck_P <- compareCluster(geneCluster = gc_P, 
+                       fun = enrichGO, 
+                       universe = names(gene_list),
+                       OrgDb = org.Acal.eg.db,
+                       keyType  = "SYMBOL",
+                       ont   = "BP",
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.05,
+                       qvalueCutoff  = 0.05,
+                       readable = TRUE)
+
+head(ck_P) 
+
+dotplot_P <- dotplot(ck_P, showCategory = 5, label_format = 50)
+ggsave(plot = dotplot_P,filename = "gene_expression/output/DE_wild/Pleural/dotplot_GO_clusters.png",width = 6,height=6)
+```
+
+
+```{r}
+
+
+
+extracted_de <- read_csv("gene_expression/output/DE_wild/Abdominal/DE_raw_data.csv") 
+gene_list<-extracted_de[extracted_de$contrast=="Hyp_T2h.Control",]$log2FoldChange
+names(gene_list)=extracted_de[extracted_de$contrast=="Hyp_T2h.Control",]$gene
+
+ggoA1 <- groupGO(gene     = A1_gene_list,
+               OrgDb    = org.Acal.eg.db,
+               keyType = "SYMBOL",
+               ont      = "BP",
+               level    = 5,
+               readable = TRUE)
+egoA1 <- ego <- enrichGO(gene = A1_gene_list,
+                universe      = names(gene_list),
+                OrgDb         = org.Acal.eg.db,
+                keyType       = "SYMBOL",
+                ont           = "BP",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.05,
+        readable      = TRUE)
+egoA1 <- filter(egoA1, p.adjust < .05, qvalue < 0.05)
+egoA1@result$Description[1:10]
+
+#Add the semantic similarity
+egoA1<-pairwise_termsim(egoA1,semData=org.Acal.eg.db)
+
+dotplot(egoA1, showCategory=10)
+
+ggoA1 <- mutate(ggoA1, geneRatio = parse_ratio(GeneRatio)) %>%
+  arrange(desc(geneRatio))
+head(ggoA1, n =20)
+
+goplot(egoA1)
+
+ggoC2 <- groupGO(gene     = C2_gene_list,
+               OrgDb    = org.Acal.eg.db,
+               keyType = "SYMBOL",
+               ont      = "BP",
+               level    = 5,
+               readable = TRUE)
+
+egoC2 <- ego <- enrichGO(gene = C2_gene_list,
+                universe      = names(gene_list),
+                OrgDb         = org.Acal.eg.db,
+                keyType       = "SYMBOL",
+                ont           = "BP",
+                pAdjustMethod = "none",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.05,
+        readable      = TRUE)
+egoC2 <- filter(egoC2, p.adjust < .05, qvalue < 0.1)
+egoC2@result$Description[1:10]
+
+ggoC2 <- mutate(ggoC2, geneRatio = parse_ratio(GeneRatio)) %>%
+  arrange(desc(geneRatio))
+head(ggoC2, n =20)
+
+
+  name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Pleural/'
+
+extracted_clust <- P_TS_object@PART_results$part_data %>%
+  rownames_to_column("gene") %>%
+  inner_join(., AcTxAnot2 %>%
+               dplyr::select(Entry, gene), by = "gene", keep = TRUE) 
+C1_gene_list<-extracted_clust[extracted_clust$gene_cluster == "C1",]$Entry
+C2_gene_list<-extracted_clust[extracted_clust$gene_cluster == "C2",]$Entry
+
+kk <- enrichMKEGG(gene         = C2_gene_list,
+                 organism     = 'hsa',
+                 keyType      = "uniprot",
+                 pAdjustMethod = "none",
+                 pvalueCutoff = 0.1)
+
+head(kk)
+```
+
+# Enrichment for Time Series Analysis Lab vs Wild
+```{r}
+# load TS_object
+load("gene_expression/output/TS_output/LCvsWC_Abdominal/timeSeries_obj_LCvsWC_abdominal.Rdata")
+load("gene_expression/output/TS_output/LCvsWC_Pleural/timeSeries_obj_LCvsWC_pleural.Rdata")
+
+
+```
+
+## GO Gene Set enrichment Analysis (Using Aplysia annotations)
+```{r FE for Abdominal}
+
+name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Abdominal/'
+
+#Check possible names in conditional and temporal
+names(A_TS_object@DE_results$conditional)
+names(A_TS_object@DE_results$temporal)
+
+#Select target DE results
+target_DE='conditional'
+target_name='Lab_cross_vs_Wild_cross_TP_6' #Change Time point and re-run
+
+#Extract gene list
+extracted_de <- A_TS_object@DE_results[[target_DE]][[target_name]]$DE_raw_data[,c('gene_id','log2FoldChange')] 
+gene_list<-extracted_de$log2FoldChange
+names(gene_list)=extracted_de$gene_id
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+
+#Check available keytypes
+keytypes(org.Acal.eg.db)
+
+
+#Run the GSEA. Important parameters are keyType, which is the keytype of
+#the gene_list. In this case, SYMBOL. OrgDb must also be specified. Other
+#parameters can be left as default or modified - more information is available
+#on the cluster profiler page
+gse <- gseGO(geneList=gene_list,
+             ont ="ALL",
+             keyType = "SYMBOL",
+             nPermSimple = 100000,
+             minGSSize = 3,
+             maxGSSize = 800,
+             pvalueCutoff = 0.05,
+             verbose = TRUE,
+             OrgDb = org.Acal.eg.db,
+             pAdjustMethod = "BH",
+             eps=0)
+#Add the semantic similarity
+gse<-pairwise_termsim(gse,semData=org.Acal.eg.db)
+
+require(DOSE)
+results_folder<-paste0(name_result_folder,'GSEA_results/',target_name,'/')
+dir.create(results_folder,recursive = T)
+
+write_delim(gse@result, file = paste(results_folder, 'gseGO_results.tab'), delim = '\t')
+#Below is a set of standard plots from clusterprofiler. These can be adjusted in many ways.
+#First, the width and height should be adjusted on a per plot basis, as the required
+#width and height will greatly vary depending on the results illustrated.
+
+#The showCategory parameter is to show the top n results based on adjusted pvalue.
+
+#You can also submit a vector of names to the showCategory parameter.
+#This is illustrated in the last bit of code on this page
+
+dotplot_name<-'default_dotplot.png'
+dotplot<-dotplot(gse, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name),width = 9,height=10)
+
+emap_name<-'default_emap.png'
+emap<-emapplot(gse, showCategory = 10)
+ggsave(plot = emap,filename = paste0(results_folder,emap_name),width = 7,height=7)
+
+cnet_name<-'default_cnet.png'
+cnet<-cnetplot(gse, categorySize="pvalue", color.params=list(foldChange=gene_list), showCategory = 3)
+ggsave(plot = cnet,filename = paste0(results_folder,cnet_name),width = 10,height=10)
+
+ridge_name<-'default_ridge.png'
+ridge<-ridgeplot(gse) + labs(x = "enrichment distribution")
+ggsave(plot = ridge,filename = paste0(results_folder,ridge_name),width = 9,height=15)
+
+
+
+#Look at first 25 results
+gse@result$Description[1:25]
+#Creating a vector with three descriptions to illustrate use
+desc_vector<-c(gse@result$Description[1:10])
+#Create a cnet using desc_vector
+cnet<-cnetplot(gse, categorySize="pvalue", color.params=list(foldChange=gene_list), node_label="category",showCategory = desc_vector)
+cnet
+
+ggsave(plot = cnet,filename = paste0(results_folder,"category_network.png"),width = 10,height=10)
+```
+
+```{r FE for Pleural_Pedal}
+
+name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Pleural/'
+
+#Check possible names in conditional and temporal
+names(P_TS_object@DE_results$conditional)
+names(P_TS_object@DE_results$temporal)
+
+#Select target DE results
+target_DE='conditional'
+target_name='Lab_cross_vs_Wild_cross_TP_6' #Change Time point and re-run
+
+#Extract gene list
+extracted_de <- P_TS_object@DE_results[[target_DE]][[target_name]]$DE_raw_data[,c('gene_id','log2FoldChange')] 
+gene_list<-extracted_de$log2FoldChange
+names(gene_list)=extracted_de$gene_id
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+
+#Check available keytypes
+keytypes(org.Acal.eg.db)
+
+
+#Run the GSEA. Important parameters are keyType, which is the keytype of
+#the gene_list. In this case, SYMBOL. OrgDb must also be specified. Other
+#parameters can be left as default or modified - more information is available
+#on the cluster profiler page
+gse <- gseGO(geneList=gene_list,
+             ont ="ALL",
+             keyType = "SYMBOL",
+             nPermSimple = 100000,
+             minGSSize = 3,
+             maxGSSize = 800,
+             pvalueCutoff = 0.05,
+             verbose = TRUE,
+             OrgDb = org.Acal.eg.db,
+             pAdjustMethod = "BH",
+             eps=0)
+#Add the semantic similarity
+gse<-pairwise_termsim(gse,semData=org.Acal.eg.db)
+
+require(DOSE)
+results_folder<-paste0(name_result_folder,'GSEA_results/',target_name,'/')
+dir.create(results_folder,recursive = T)
+
+write_delim(gse@result, file = paste(results_folder, 'gseGO_results.tab'), delim = '\t')
+#Below is a set of standard plots from clusterprofiler. These can be adjusted in many ways.
+#First, the width and height should be adjusted on a per plot basis, as the required
+#width and height will greatly vary depending on the results illustrated.
+
+#The showCategory parameter is to show the top n results based on adjusted pvalue.
+
+#You can also submit a vector of names to the showCategory parameter.
+#This is illustrated in the last bit of code on this page
+
+dotplot_name<-'default_dotplot.png'
+dotplot<-dotplot(gse, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name),width = 9,height=10)
+
+emap_name<-'default_emap.png'
+emap<-emapplot(gse, showCategory = 10)
+ggsave(plot = emap,filename = paste0(results_folder,emap_name),width = 7,height=7)
+
+cnet_name<-'default_cnet.png'
+cnet<-cnetplot(gse, categorySize="pvalue", color.params=list(foldChange=gene_list), showCategory = 3)
+ggsave(plot = cnet,filename = paste0(results_folder,cnet_name),width = 10,height=10)
+
+ridge_name<-'default_ridge.png'
+ridge<-ridgeplot(gse) + labs(x = "enrichment distribution")
+ggsave(plot = ridge,filename = paste0(results_folder,ridge_name),width = 9,height=15)
+
+
+
+#Look at first 25 results
+gse@result$Description[1:25]
+#Creating a vector with three descriptions to illustrate use
+desc_vector<-c(gse@result$Description[1:25])
+#Create a cnet using desc_vector
+cnet<-cnetplot(gse, categorySize="pvalue", color.params=list(foldChange=gene_list), node_label="category",showCategory = desc_vector)
+cnet
+
+ggsave(plot = cnet,filename = paste0(results_folder,"category_network.png"),width = 10,height=10)
+```
+# KEGG gene set enrichment
+
+```{r KEGG Abdominal}
+#For module KEGGs I need to use the human annotation with the orthology results of Nick. There are not annotated KEGG in the AnnotationHub dataset
+name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Abdominal/'
+
+target_DE='conditional'
+target_name='Lab_cross_vs_Wild_cross_TP_6' #Change Time point and re-run
+
+#Extract gene list
+extracted_de <- A_TS_object@DE_results[[target_DE]][[target_name]]$DE_raw_data[,c('gene_id','log2FoldChange')] %>%
+  dplyr::mutate(gene = gene_id) %>%
+  dplyr::inner_join(., AcTxAnot2, by = "gene") %>%
+          dplyr::select(log2FoldChange, gene_id, Entry, GeneID) %>%
+          unique()
+extracted_de$GeneID <- gsub(",","", extracted_de$GeneID)
+
+
+# Convert to gene identifiers ENTREZIDs to be able to use for pathview
+
+extracted_de$entrez <- mapIds(org.Hs.eg.db,
+                     keys=extracted_de$Entry,
+                     column="ENTREZID",
+                     keytype="UNIPROT",
+                     multiVals="first")
+
+unique_de_mean <- extracted_de %>%
+  group_by(Entry) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    GeneID = GeneID,
+    entrez = entrez
+  ) %>%
+  unique() %>%
+  mutate(entrez2 = coalesce(entrez, GeneID))
+
+gene_list<-unique_de_mean$log2FoldChange
+names(gene_list)=unique_de_mean$Entry
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+#Check available keytypes
+keytypes(org.Hs.eg.db)
+
+kk <- gseKEGG(geneList     = gene_list,
+               organism     = 'hsa',
+               keyType      = "uniprot",
+               pvalueCutoff = 0.05,
+               verbose      = FALSE,
+               eps          = 0)
+head(kk)
+kk <- pairwise_termsim(kk)
+
+
+kk2 <- gseMKEGG(geneList     = gene_list,
+               organism     = 'hsa',
+               keyType      = "uniprot",
+               pvalueCutoff = 0.05,
+               verbose      = FALSE)
+head(kk2)
+
+kk2 <- pairwise_termsim(kk2)
+
+require(DOSE)
+results_folder<-paste0(name_result_folder,'GSEA_results/',target_name,'/')
+dir.create(results_folder,recursive = T)
+
+write_delim(kk@result, file = paste(results_folder, 'gseKEGG_results.tab'), delim = '\t')
+write_delim(kk2@result, file = paste(results_folder, 'gseMKEGG_results.tab'), delim = '\t')
+
+#Below is a set of standard plots from clusterprofiler. These can be adjusted in many ways.
+#First, the width and height should be adjusted on a per plot basis, as the required
+#width and height will greatly vary depending on the results illustrated.
+
+#The showCategory parameter is to show the top n results based on adjusted pvalue.
+
+#You can also submit a vector of names to the showCategory parameter.
+#This is illustrated in the last bit of code on this page
+
+dotplot_name<-'KEGG_default_dotplot.png'
+dotplot<-dotplot(kk, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name))
+
+emap_name<-'KEGG_default_emap.png'
+emap<-emapplot(kk, showCategory = 10)
+ggsave(plot = emap,filename = paste0(results_folder,emap_name),width = 7,height=7)
+
+upset_name<-'KEGG_default_upset.png'
+upset<-upsetplot(kk)
+ggsave(plot = upset,filename = paste0(results_folder,upset_name),width = 10,height=5)
+
+dotplot_name<-'MKEGG_default_dotplot.png'
+dotplot<-dotplot(kk2, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name))
+
+emap_name<-'MKEGG_default_emap.png'
+emap<-emapplot(kk2, showCategory = 10)
+ggsave(plot = emap,filename = paste0(results_folder,emap_name),width = 7,height=7)
+
+ridge_name<-'MKEGG_default_ridge.png'
+ridge<-ridgeplot(kk2) + labs(x = "enrichment distribution")
+ggsave(plot = ridge,filename = paste0(results_folder,ridge_name))
+
+kk@result
+
+gene_list<-unique_de_mean$log2FoldChange
+names(gene_list)=unique_de_mean$entrez2
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+gene_list <- gene_list[names(gene_list) != ""]
+
+unique_de_mean2 <- extracted_de %>%
+  group_by(Entry) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    GeneID = GeneID,
+    entrez = entrez
+  ) %>%
+  unique() %>%
+  mutate(entrez2 = coalesce(entrez, GeneID)) %>%
+  filter(entrez2 != "") %>%
+  dplyr::select(entrez2,log2FoldChange) %>%
+  unique() %>%
+  group_by(entrez2) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    entrez2 = entrez2
+  ) %>%
+  unique()
+
+gene_list<-unique_de_mean2$log2FoldChange
+names(gene_list)=unique_de_mean2$entrez2
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+wp <- gseWP(gene_list, organism = "Homo sapiens")
+
+write_delim(wp@result, file = paste(results_folder, 'gseWP_results.tab'), delim = '\t')
+
+dotplot_name<-'WikiPathway_default_dotplot.png'
+dotplot<-dotplot(wp, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name))
+
+
+
+p_results_folder <- paste0(results_folder, "pathview_figs")
+dir.create(p_results_folder,recursive = T)
+setwd(p_results_folder)
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa00190",
+                     species    = "hsa",
+                     limit      = list(gene=max(abs(gene_list)), cpd=1))
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa03010",
+                     species    = "hsa",
+                     limit      = list(gene=max(abs(gene_list)), cpd=1))
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa00620",
+                     species    = "hsa",
+                     #same.layer = F,
+                     limit      = list(gene=max(abs(gene_list)), cpd=1),)
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa00010",
+                     species    = "hsa",
+                    # same.layer = F,
+                     limit      = list(gene=max(abs(gene_list)), cpd=1),)
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa00010",
+                     species    = "hsa",
+                    # same.layer = F,
+                     limit      = list(gene=max(abs(gene_list)), cpd=1))
+
+```
+
+```{r MKEGG Pleural}
+#For module KEGGs I need to use the human annotation with the orthology results of Nick. There are not annotated KEGG in the AnnotationHub dataset
+name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Pleural/'
+
+target_DE='conditional'
+target_name='Lab_cross_vs_Wild_cross_TP_0' #Change Time point and re-run
+
+#Extract gene list
+extracted_de <- P_TS_object@DE_results[[target_DE]][[target_name]]$DE_raw_data[,c('gene_id','log2FoldChange')] %>%
+  dplyr::mutate(gene = gene_id) %>%
+  dplyr::inner_join(., AcTxAnot2, by = "gene") %>%
+          dplyr::select(log2FoldChange, gene_id, Entry, GeneID) %>%
+          unique()
+extracted_de$GeneID <- gsub(",","", extracted_de$GeneID)
+extracted_de$entrez <- mapIds(org.Hs.eg.db,
+                     keys=extracted_de$Entry,
+                     column="ENTREZID",
+                     keytype="UNIPROT",
+                     multiVals="first")
+
+unique_de_mean <- extracted_de %>%
+  group_by(Entry) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    GeneID = GeneID,
+    entrez = entrez
+  ) %>%
+  unique() %>%
+  mutate(entrez2 = coalesce(entrez, GeneID))
+
+gene_list<-unique_de_mean$log2FoldChange
+names(gene_list)=unique_de_mean$Entry
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+
+#Check available keytypes
+keytypes(org.Hs.eg.db)
+
+kk <- gseKEGG(geneList     = gene_list,
+               organism     = 'hsa',
+               keyType      = "uniprot",
+               pvalueCutoff = 0.05,
+               verbose      = FALSE,
+               eps          = 0)
+head(kk)
+kk <- pairwise_termsim(kk)
+
+
+kk2 <- gseMKEGG(geneList     = gene_list,
+               organism     = 'hsa',
+               keyType      = "uniprot",
+               pvalueCutoff = 0.05,
+               verbose      = FALSE)
+head(kk2)
+
+kk2 <- pairwise_termsim(kk2)
+
+require(DOSE)
+results_folder<-paste0(name_result_folder,'GSEA_results/',target_name,'/')
+dir.create(results_folder,recursive = T)
+
+write_delim(kk@result, file = paste(results_folder, 'gseKEGG_results.tab'), delim = '\t')
+write_delim(kk2@result, file = paste(results_folder, 'gseMKEGG_results.tab'), delim = '\t')
+
+#Below is a set of standard plots from clusterprofiler. These can be adjusted in many ways.
+#First, the width and height should be adjusted on a per plot basis, as the required
+#width and height will greatly vary depending on the results illustrated.
+
+#The showCategory parameter is to show the top n results based on adjusted pvalue.
+
+#You can also submit a vector of names to the showCategory parameter.
+#This is illustrated in the last bit of code on this page
+
+dotplot_name<-'KEGG_default_dotplot.png'
+dotplot<-dotplot(kk, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name))
+
+emap_name<-'KEGG_default_emap.png'
+emap<-emapplot(kk, showCategory = 10)
+ggsave(plot = emap,filename = paste0(results_folder,emap_name),width = 7,height=7)
+
+upset_name<-'KEGG_default_upset.png'
+upset<-upsetplot(kk)
+ggsave(plot = upset,filename = paste0(results_folder,upset_name),width = 10,height=5)
+
+dotplot_name<-'MKEGG_default_dotplot.png'
+dotplot<-dotplot(kk2, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name))
+
+emap_name<-'MKEGG_default_emap.png'
+emap<-emapplot(kk2, showCategory = 10)
+ggsave(plot = emap,filename = paste0(results_folder,emap_name),width = 7,height=7)
+
+ridge_name<-'MKEGG_default_ridge.png'
+ridge<-ridgeplot(kk2) + labs(x = "enrichment distribution")
+ggsave(plot = ridge,filename = paste0(results_folder,ridge_name))
+
+kk@result
+
+gene_list<-unique_de_mean$log2FoldChange
+names(gene_list)=unique_de_mean$entrez2
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+gene_list <- gene_list[names(gene_list) != ""]
+
+unique_de_mean2 <- extracted_de %>%
+  group_by(Entry) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    GeneID = GeneID,
+    entrez = entrez
+  ) %>%
+  unique() %>%
+  mutate(entrez2 = coalesce(entrez, GeneID)) %>%
+  filter(entrez2 != "") %>%
+  dplyr::select(entrez2,log2FoldChange) %>%
+  unique() %>%
+  group_by(entrez2) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    entrez2 = entrez2
+  ) %>%
+  unique()
+
+gene_list<-unique_de_mean2$log2FoldChange
+names(gene_list)=unique_de_mean2$entrez2
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+wp <- gseWP(gene_list, organism = "Homo sapiens")
+
+write_delim(wp@result, file = paste(results_folder, 'gseWP_results.tab'), delim = '\t')
+
+dotplot_name<-'WikiPathway_default_dotplot.png'
+dotplot<-dotplot(wp, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name))
+
+p_results_folder <- paste0(results_folder, "pathview_figs")
+dir.create(p_results_folder,recursive = T)
+setwd(p_results_folder)
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa00190",
+                     species    = "hsa",
+                     limit      = list(gene=max(abs(gene_list)), cpd=1))
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa03010",
+                     species    = "hsa",
+                     limit      = list(gene=max(abs(gene_list)), cpd=1))
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa00620",
+                     species    = "hsa",
+                     #same.layer = F,
+                     limit      = list(gene=max(abs(gene_list)), cpd=1),)
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa00010",
+                     species    = "hsa",
+                    # same.layer = F,
+                     limit      = list(gene=max(abs(gene_list)), cpd=1),)
+pathview(gene.data  = gene_list,
+                     pathway.id = "hsa00010",
+                     species    = "hsa",
+                    # same.layer = F,
+                     limit      = list(gene=max(abs(gene_list)), cpd=1))
+
+```
+
+
+# Cluster GO enrichments
+```{r}
+##Pleural
+
+library(DOSE)
+extracted_clust <- P_TS_object@PART_results$part_data 
+C1_gene_list<-rownames(extracted_clust[extracted_clust$gene_cluster == "C1",])
+C2_gene_list<-rownames(extracted_clust[extracted_clust$gene_cluster == "C2",])
+
+extracted_de <- A_TS_object@DE_results[["temporal"]][["TP_1_vs_TP_0"]]$DE_raw_data[,c('gene_id','log2FoldChange')] 
+gene_list<-extracted_de$log2FoldChange
+names(gene_list)=extracted_de$gene_id
+
+ggoC1 <- groupGO(gene     = C1_gene_list,
+               OrgDb    = org.Acal.eg.db,
+               keyType = "SYMBOL",
+               ont      = "BP",
+               level    = 3,
+               readable = TRUE)
+egoC1 <- ego <- enrichGO(gene = C1_gene_list,
+                universe      = names(gene_list),
+                OrgDb         = org.Acal.eg.db,
+                keyType       = "SYMBOL",
+                ont           = "BP",
+                pAdjustMethod = "none",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.1,
+        readable      = TRUE)
+egoC1 <- filter(egoC1, p.adjust < .05, qvalue < 0.1)
+egoC1@result$Description[1:10]
+
+
+ggoC1 <- mutate(ggoC1, geneRatio = parse_ratio(GeneRatio)) %>%
+  arrange(desc(geneRatio))
+head(ggoC1, n =20)
+
+AnnotationDbi::mget()
+goplot(egoC1)
+
+ggoC2 <- groupGO(gene     = C2_gene_list,
+               OrgDb    = org.Acal.eg.db,
+               keyType = "SYMBOL",
+               ont      = "BP",
+               level    = 4,
+               readable = TRUE)
+
+egoC2 <- ego <- enrichGO(gene = C2_gene_list,
+                universe      = names(gene_list),
+                OrgDb         = org.Acal.eg.db,
+                keyType       = "SYMBOL",
+                ont           = "BP",
+                pAdjustMethod = "none",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.05,
+        readable      = TRUE)
+egoC2 <- filter(egoC2, p.adjust < .05, qvalue < 0.1)
+egoC2@result$Description[1:10]
+
+ggoC2 <- mutate(ggoC2, geneRatio = parse_ratio(GeneRatio)) %>%
+  arrange(desc(geneRatio))
+head(ggoC2, n =20)
+
+
+  name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Pleural/'
+
+extracted_clust <- P_TS_object@PART_results$part_data %>%
+  rownames_to_column("gene") %>%
+  inner_join(., AcTxAnot2 %>%
+               dplyr::select(Entry, gene), by = "gene", keep = TRUE) 
+C1_gene_list<-extracted_clust[extracted_clust$gene_cluster == "C1",]$Entry
+C2_gene_list<-extracted_clust[extracted_clust$gene_cluster == "C2",]$Entry
+
+kk <- enrichMKEGG(gene         = C2_gene_list,
+                 organism     = 'hsa',
+                 keyType      = "uniprot",
+                 pAdjustMethod = "none",
+                 pvalueCutoff = 0.1)
+
+head(kk)
+```
+
+
+# TopGO enrichment analysis of DEGs across conditional and temporal comparizons
+```{r}
+load("../data/Annotation/ACAL_annot_GO_KEGG.Rdata")
+
+# DEGs in Abdominal
+
+all_genes <- read_csv("../output/TS_output/LCvsWC_Abdominal/DE_results_temporal/TP_1_vs_TP_0/DE_raw_data.csv")[,2]
+
+# Genes of interest
+H2hvsC <- read.csv("../output/TS_output/LCvsWC_Abdominal/DE_results_temporal/TP_1_vs_TP_0/DE_sig_data.csv") %>%
+  dplyr::select(gene_id, log2FoldChange, padj)
+
+H2hvsC_up <- H2hvsC %>%
+  filter(log2FoldChange >= 0) %>%
+  dplyr::select(gene_id)
+
+H2hvsC_down <- H2hvsC %>%
+  filter(log2FoldChange <= 0) %>%
+  dplyr::select(gene_id)
+
+##Gene Lists (Names Factors) for topGO
+GL_2hvsC_up <- factor(as.integer(all_genes$gene_id %in% H2hvsC_up$gene_id))
+names(GL_2hvsC_up) <- all_genes$gene_id
+str(GL_2hvsC_up)
+
+GL_2hvsC_down <- factor(as.integer(all_genes$gene_id %in% H2hvsC_down$gene_id))
+names(GL_2hvsC_down) <- all_genes$gene_id
+str(GL_2hvsC_down)
+
+# Create topGO dataset
+GO_2hvsC_up_BP <-new("topGOdata", ontology="BP", gene2GO=AcGene2GO, allGenes=GL_2hvsC_up, annot = annFUN.gene2GO)
+GO_2hvsC_down_BP <-new("topGOdata", ontology="BP", gene2GO=AcGene2GO, allGenes=GL_2hvsC_down, annot = annFUN.gene2GO)
+
+##Fishers Exact Test
+GO_2hvsC_up_BP_Fish <- runTest(GO_2hvsC_up_BP, algorithm="weight01",  statistic="fisher")
+GO_2hvsC_down_BP_Fish <- runTest(GO_2hvsC_down_BP, algorithm="weight01", statistic="fisher")
+
+##Table of Results
+allGO <- usedGO(GO_2hvsC_up_BP)
+GO_2hvsC_up_BP.En<-GenTable(GO_2hvsC_up_BP, Fisher = GO_2hvsC_up_BP_Fish, topNodes=length(allGO), ranksOf = "Fisher", numChar = 70)
+GO_2hvsC_up_BP.En$Fisher<-as.numeric(GO_2hvsC_up_BP.En$Fisher)
+
+allGO <- usedGO(GO_2hvsC_down_BP)
+GO_2hvsC_down_BP.En<-GenTable(GO_2hvsC_down_BP, Fisher = GO_2hvsC_down_BP_Fish, topNodes=length(allGO), ranksOf = "Fisher", numChar = 70)
+GO_2hvsC_down_BP.En$Fisher<-as.numeric(GO_2hvsC_down_BP.En$Fisher)
+
+## BH correction for multiple testing
+p.adj = round(p.adjust(GO_2hvsC_up_BP.En$Fisher, method = "fdr"), digits = 4)
+GO_2hvsC_up_BP.En <- cbind(GO_2hvsC_up_BP.En, p.adj)
+
+p.adj = round(p.adjust(GO_2hvsC_down_BP.En$Fisher, method = "fdr"), digits = 4)
+GO_2hvsC_down_BP.En <- cbind(GO_2hvsC_down_BP.En, p.adj)
+
+##Filter for Significant Terms
+GO_2hvsC_up_BP.En<-GO_2hvsC_up_BP.En[GO_2hvsC_up_BP.En$p.adj<0.05,]
+GO_2hvsC_down_BP.En<-GO_2hvsC_down_BP.En[GO_2hvsC_down_BP.En$p.adj<0.05,]
+
+##Fix order of Terms for Plotting
+GO_2hvsC_up_BP.En$Term<-factor(GO_2hvsC_up_BP.En$Term, levels = rev(GO_2hvsC_up_BP.En$Term))
+GO_2hvsC_down_BP.En$Term<-factor(GO_2hvsC_down_BP.En$Term, levels = rev(GO_2hvsC_down_BP.En$Term))
+
+GO_2hvsC_up_BP.En
+GO_2hvsC_down_BP.En
+
+## GSEA with cluster profiler
+## Get gene expression results dataset and merge witrh annotations to get human/relevant Entry IDs 
+GE_df<-read.csv("../output/TS_output/LCvsWC_Abdominal/DE_results_temporal/TP_1_vs_TP_0/DE_raw_data.csv", header = TRUE) %>%
+          inner_join(., AcTxAnot2 %>%
+                       dplyr::select(gene, GeneID) %>%
+                      unique(), by = c("gene_id" = "gene")) 
+
+# Are there duplicated?
+any(duplicated(GE_df$Entry)) 
+
+dup_gene_symbols <- GE_df %>%
+  dplyr::filter(duplicated(Entry)) %>%
+  dplyr::pull(Entry)
+
+# Check the duplicates
+GE_df %>%
+  dplyr::filter(Entry %in% dup_gene_symbols) %>%
+  dplyr::select(Entry, gene_id, log2FoldChange, padj) %>%
+  dplyr::arrange(Entry)
+# Filter duplicates keeping the more variable in terms of log2Fold
+filtered_GE_df <- GE_df %>%
+  # Sort so that the highest absolute values of the log2 fold change are at the
+  # top
+  dplyr::arrange(dplyr::desc(abs(log2FoldChange))) %>%
+  # Filter out the duplicated rows using `dplyr::distinct()`
+  dplyr::distinct(Entry, .keep_all = TRUE)
+
+any(duplicated(filtered_GE_df$Entry)) 
+
+filtered_GE_df %>%
+  filter(log2FoldChange >= 0)
+
+gene_list <- GE_df$log2FoldChange
+names(gene_list)=GE_df$gene_id
+
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+
+library(org.Hs.eg.db)
+library(ggplot2)
+library(enrichplot) 
+
+#Check available keytypes
+keytypes(org.Hs.eg.db)
+
+
+#Run the GSEA. Important parameters are keyType, which is the keytype of
+#the gene_list. In this case, SYMBOL. OrgDb must also be specified. Other
+#parameters can be left as default or modified - more information is available
+#on the cluster profiler page
+gse <- gseGO(geneList=gene_list,
+             ont ="BP",
+             keyType = "SYMBOL",
+             nPermSimple = 100000,
+             minGSSize = 3,
+             maxGSSize = 800,
+             pvalueCutoff = 0.05,
+             verbose = TRUE,
+             OrgDb = org.Acal.eg.db, 
+             pAdjustMethod = "BH")
+#Add the semantic similarity
+gse<-pairwise_termsim(gse,semData=org.Acal.eg.db)
+
+
+dotplot(gse, showCategory=10, split=".sign") + facet_grid(.~.sign)
+
+
+## Manually create a GO annotation for GSEA term2Gene
+
+Acal_GO_BP <- AcTxAnot2 %>%
+  dplyr::select(., gene, GO_bp)
+
+gsea_results <- GSEA(
+  geneList = gene_list, # Ordered ranked gene list
+  minGSSize = 25, # Minimum gene set size
+  maxGSSize = 500, # Maximum gene set set
+  pvalueCutoff = 0.05, # p-value cutoff
+  eps = 0, # Boundary for calculating the p value
+  seed = TRUE, # Set seed to make results reproducible
+  pAdjustMethod = "BH", # Benjamini-Hochberg correction
+  TERM2GENE = dplyr::select(
+    m_GO_df,
+    gs_name,
+    
+  )
+)
+
+library(AnnotationHub)
+library(AnnotationForge)
+ah <- AnnotationHub()
+ah2 <- query(ah, "aplysia")
+
+file.copy(AnnotationHub::cache(ah[["AH118618"]]), "./org.Aplysia_californica.eg.sqlite")
+
+seed <- new("AnnDbPkgSeed", Package = "org.Aplysia_californica.eg.db", Version = "0.0.1",Author = "Javier A. Rodriguez-Casariego", Maintainer = "Javier A. Rodriguez-Casariego <jar686@bio.miami.edu>", PkgTemplate = "NOSCHEMA.DB", AnnObjPrefix = "org.Aplysia_californica.eg", organism = "Aplysia californica", species = "Aplysia californica", biocViews = "annotation", manufacturerUrl = "none", manufacturer = "none", chipName = "none")
+makeAnnDbPkg(seed, ah[["AH118618"]])
+
+install.packages("org.Ng.eg.db/", type = "source", repos = NULL)
+
+org.Acal.eg.db <- ah[["AH118618"]]
+
+keys <- tail( keys(org.Hs.eg.db) )
+keys
+AnnotationDbi::select(org.Hs.eg.db, keys=keys, columns = c("SYMBOL","GO"))
+keytypes(org.Hs.eg.db)
+
+```
+

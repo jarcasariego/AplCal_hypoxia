@@ -1,0 +1,8 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0234306114176825,25,24,3,0.125,0.12,GO:0015858,GO:BP,nucleoside transport,6868,5025,GO:0015931/GO:1901264
+2,query_1,TRUE,0.0234306114176825,25,24,3,0.125,0.12,GO:1901642,GO:BP,nucleoside transmembrane transport,6868,22148,GO:0015858/GO:0055085
+3,query_1,TRUE,0.0451654138739154,31,24,3,0.125,0.0967741935483871,GO:1901264,GO:BP,carbohydrate derivative transport,6868,21847,GO:0071702
+4,query_1,TRUE,0.0129920941865199,25,37,3,0.0810810810810811,0.12,GO:0005337,GO:MF,nucleoside transmembrane transporter activity,10307,1422,GO:0015932/GO:1901505
+5,query_1,TRUE,0.027537031151237,32,37,3,0.0810810810810811,0.09375,GO:0015932,GO:MF,nucleobase-containing compound transmembrane transporter activity,10307,2692,GO:0022857
+6,query_1,TRUE,0.0302159670162141,33,37,3,0.0810810810810811,0.0909090909090909,GO:1901505,GO:MF,carbohydrate derivative transmembrane transporter activity,10307,10917,GO:0022857
+7,query_1,TRUE,0.0433853675528022,168,37,5,0.135135135135135,0.0297619047619048,GO:0004497,GO:MF,monooxygenase activity,10307,832,GO:0016491

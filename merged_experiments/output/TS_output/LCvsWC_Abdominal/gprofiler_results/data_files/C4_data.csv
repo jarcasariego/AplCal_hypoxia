@@ -1,0 +1,2 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0125507218109608,107,214,10,0.0467289719626168,0.0934579439252336,GO:0008061,GO:MF,chitin binding,10307,1534,GO:0097367

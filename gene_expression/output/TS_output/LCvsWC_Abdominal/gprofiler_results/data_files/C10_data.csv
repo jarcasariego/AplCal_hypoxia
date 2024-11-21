@@ -1,0 +1,4 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0395873767590504,55,33,3,0.0909090909090909,0.0545454545454545,GO:1904315,GO:MF,transmitter-gated monoatomic ion channel activity involved in regulation of postsynaptic membrane potential,20212,10989,GO:0022824/GO:0099529
+2,query_1,TRUE,0.044053882254643,57,33,3,0.0909090909090909,0.0526315789473684,GO:0099529,GO:MF,neurotransmitter receptor activity involved in regulation of postsynaptic membrane potential,20212,9226,GO:0098960
+3,query_1,TRUE,0.0326065099152628,13,16,2,0.125,0.153846153846154,WP:WP2436,WP,Dopamine metabolism,8286,115,WP:000000

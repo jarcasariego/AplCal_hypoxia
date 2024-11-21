@@ -1,0 +1,6 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.00134358282173944,6228,25,18,0.72,0.00289017341040462,GO:0071944,GO:CC,cell periphery,22097,2793,GO:0110165
+2,query_1,TRUE,0.00429597560607911,16,10,3,0.3,0.1875,HP:0001530,HP,Mild postnatal growth retardation,4958,1124,HP:0008897
+3,query_1,TRUE,0.0480286762495595,5,10,2,0.2,0.4,HP:0006521,HP,Pulmonary lymphangiectasia,4958,4265,HP:0006529/HP:0031842
+4,query_1,TRUE,0.0480286762495595,5,10,2,0.2,0.4,HP:0006529,HP,Abnormal pulmonary lymphatics,4958,4270,HP:0002088/HP:0100763
+5,query_1,TRUE,0.00295865496034298,245,14,5,0.357142857142857,0.0204081632653061,REAC:R-HSA-425407,REAC,SLC-mediated transmembrane transport,10842,2079,REAC:R-HSA-382551

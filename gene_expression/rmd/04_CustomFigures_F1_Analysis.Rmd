@@ -1,0 +1,1087 @@
+---
+title: "Custom Figures for TS analysis"
+author: "Javier Rodriguez Casariego"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+```{r knitr_setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+knitr::opts_knit$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia')
+```
+
+# DE conditional upset plot
+```{r echo=TRUE, message=TRUE, warning=FALSE}
+# Pull and organize DE data for all timepoints. 
+# For all timepoints (Ctrol, hyp_2h ...), contrast is always Lab_cross vs Wild_cross (upregulation means higher in lab_cross and viceversa)
+
+knitr::opts_chunk$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia')
+
+library(ggupset)
+library(ComplexHeatmap)
+library(tidyverse)
+
+# load gene expression results for each timepoint for Lab_cross vs Wild_Cross
+load("gene_expression/output/TS_output/LCvsWC_Abdominal/timeSeries_obj_LCvsWC_abdominal.Rdata")
+load("gene_expression/output/TS_output/LCvsWC_Pleural/timeSeries_obj_LCvsWC_pleural.Rdata")
+
+names(A_TS_object@DE_results$conditional)
+names(P_TS_object@DE_results$conditional)
+
+Abdominal_Control_T0_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_0"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN")) %>%
+  mutate(contrast = paste0("Control_Abdominal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+  
+Abdominal_Hyp_2h_T1_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_1"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Hypoxia_2h_Abdominal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+Abdominal_Hyp_6h_T2_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_2"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Hypoxia_6h_Abdominal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+Abdominal_Reox_T3_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_3"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Reoxygenation_Abdominal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+Abdominal_Hyp_5d_T4_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_4"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Hypoxia_5d_Abdominal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+Abdominal_Hyp_6d_T5_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_5"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Hypoxia_6d_Abdominal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+Abdominal_Recovery_T6_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_6"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Recovery_Abdominal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+# Pleural/Pedal
+PleuralPedal_Control_T0_DE <- P_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_0"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN")) %>%
+  mutate(contrast = paste0("Control_PleuralPedal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+  
+PleuralPedal_Hyp_2h_T1_DE <- P_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_1"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Hypoxia_2h_PleuralPedal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+PleuralPedal_Hyp_6h_T2_DE <- P_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_2"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Hypoxia_6h_PleuralPedal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+PleuralPedal_Reox_T3_DE <- P_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_3"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Reoxygenation_PleuralPedal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+PleuralPedal_Hyp_5d_T4_DE <- P_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_4"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Hypoxia_5d_PleuralPedal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+PleuralPedal_Hyp_6d_T5_DE <- P_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_5"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Hypoxia_6d_PleuralPedal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+PleuralPedal_Recovery_T6_DE <- P_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_6"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  filter(.,padj < 0.05) %>%
+  mutate(dir = if_else(log2FoldChange > 0, "UP", "DOWN"))  %>%
+  mutate(contrast = paste0("Recovery_PleuralPedal","_",dir)) %>%
+  dplyr::select(gene_id, contrast, dir)
+
+```
+```{r fig.height=5, fig.width=8}
+#Abdominal
+# Create list with DE genes per contrast
+
+DE_lt_A <- list(Normoxia = as.character(Abdominal_Control_T0_DE$gene_id),
+                Hypoxia_2h = as.character(Abdominal_Hyp_2h_T1_DE$gene_id),
+                Hypoxia_6h = as.character(Abdominal_Hyp_6h_T2_DE$gene_id),
+                Hypoxia_5d = as.character(Abdominal_Hyp_5d_T4_DE$gene_id),
+                Hypoxia_6d = as.character(Abdominal_Hyp_6d_T5_DE$gene_id),
+                Reoxygenation = as.character(Abdominal_Reox_T3_DE$gene_id),
+                Recovery = as.character(Abdominal_Recovery_T6_DE$gene_id))
+
+DE_lt_A_down <- list(Normoxia = as.character(Abdominal_Control_T0_DE$gene_id[Abdominal_Control_T0_DE$dir == "DOWN"]),
+                Hypoxia_2h = as.character(Abdominal_Hyp_2h_T1_DE$gene_id[Abdominal_Hyp_2h_T1_DE$dir == "DOWN"]),
+                Hypoxia_6h = as.character(Abdominal_Hyp_6h_T2_DE$gene_id[Abdominal_Hyp_6h_T2_DE$dir == "DOWN"]),
+                Hypoxia_5d = as.character(Abdominal_Hyp_5d_T4_DE$gene_id[Abdominal_Hyp_5d_T4_DE$dir == "DOWN"]),
+                Hypoxia_6d = as.character(Abdominal_Hyp_6d_T5_DE$gene_id)[Abdominal_Hyp_6d_T5_DE$dir == "DOWN"],
+                Reoxygenation = as.character(Abdominal_Reox_T3_DE$gene_id[Abdominal_Reox_T3_DE$dir == "DOWN"]),
+                Recovery = as.character(Abdominal_Recovery_T6_DE$gene_id[Abdominal_Recovery_T6_DE$dir == "DOWN"]))
+
+DE_lt_A_up <- list(Normoxia = as.character(Abdominal_Control_T0_DE$gene_id[Abdominal_Control_T0_DE$dir == "UP"]),
+                Hypoxia_2h = as.character(Abdominal_Hyp_2h_T1_DE$gene_id[Abdominal_Hyp_2h_T1_DE$dir == "UP"]),
+                Hypoxia_6h = as.character(Abdominal_Hyp_6h_T2_DE$gene_id[Abdominal_Hyp_6h_T2_DE$dir == "UP"]),
+                Hypoxia_5d = as.character(Abdominal_Hyp_5d_T4_DE$gene_id[Abdominal_Hyp_5d_T4_DE$dir == "UP"]),
+                Hypoxia_6d = as.character(Abdominal_Hyp_6d_T5_DE$gene_id)[Abdominal_Hyp_6d_T5_DE$dir == "UP"],
+                Reoxygenation = as.character(Abdominal_Reox_T3_DE$gene_id[Abdominal_Reox_T3_DE$dir == "UP"]),
+                Recovery = as.character(Abdominal_Recovery_T6_DE$gene_id[Abdominal_Recovery_T6_DE$dir == "UP"]))
+
+
+#calculate the intersection between the differentially expressed gene sets
+set.seed(12345)
+DE_m <- make_comb_mat(DE_lt_A, mode = "distinct")
+DE_m_down <- make_comb_mat(DE_lt_A_down, mode = "distinct")
+DE_m_up <- make_comb_mat(DE_lt_A_up, mode = "distinct")
+
+# exclude self-intersects (total # of diff. genes will be displayed separately)
+DE_m <- DE_m[comb_degree(DE_m) > 1]
+DE_m_down <- DE_m_down[comb_degree(DE_m_down) > 1]
+DE_m_up <- DE_m_up[comb_degree(DE_m_up) > 1]
+
+DE_m <- DE_m[comb_size(DE_m) > 20]
+DE_m_down <- DE_m_down[comb_name(DE_m)]
+DE_m_up <- DE_m_up[comb_name(DE_m)]
+
+m_list <- list(all_DEGs = DE_m,
+               downregulated = DE_m_down,
+               upregulated = DE_m_up)
+
+sapply(m_list, comb_size)
+
+m_list = normalize_comb_mat(m_list)
+sapply(m_list, comb_size)
+
+max_set_size = max(sapply(m_list, set_size))
+max_comb_size = max(sapply(m_list, comb_size))
+
+top_ha = HeatmapAnnotation(
+    "up" = anno_barplot(comb_size(m_list[[3]]), 
+        gp = gpar(fill = "#B31B21"), height = unit(2.5, "cm"), ylim = c(0,350)), 
+    "down" = anno_barplot(comb_size(m_list[[2]]), 
+        gp = gpar(fill = "#1465AC"), height = unit(2.5, "cm"), ylim = c(0,350)), 
+    "all" = anno_barplot(comb_size(m_list[[1]]), 
+        gp = gpar(fill = "black"), height = unit(2.5, "cm"),ylim = c(0,350)),
+    gap = unit(1, "mm"), annotation_name_side = "left", annotation_name_rot = 90)
+
+# the same for using m2 or m3
+ht_A <- UpSet(m_list[[1]], top_annotation = top_ha, 
+      right_annotation = upset_right_annotation(m_list[[1]], add_numbers = TRUE, show_annotation_name = F, axis = F),
+      set_order = c("Normoxia","Hypoxia_2h","Hypoxia_6h","Hypoxia_5d",
+                   "Hypoxia_6d","Reoxygenation","Recovery"));ht_A
+
+# Plot upset for all shared DE and directionality
+
+pdf(file="gene_expression/figures/Fig2A_UpsetPlotDEGs_Abdominal.pdf", width = 8, height = 5)
+draw(ht_A)
+dev.off()
+
+#Pleural_Pedal
+DE_lt_P <- list(Normoxia = as.character(PleuralPedal_Control_T0_DE$gene_id),
+                Hypoxia_2h = as.character(PleuralPedal_Hyp_2h_T1_DE$gene_id),
+                Hypoxia_6h = as.character(PleuralPedal_Hyp_6h_T2_DE$gene_id),
+                Hypoxia_5d = as.character(PleuralPedal_Hyp_5d_T4_DE$gene_id),
+                Hypoxia_6d = as.character(PleuralPedal_Hyp_6d_T5_DE$gene_id),
+                Reoxygenation = as.character(PleuralPedal_Reox_T3_DE$gene_id),
+                Recovery = as.character(PleuralPedal_Recovery_T6_DE$gene_id))
+
+DE_lt_P_down <- list(Normoxia = as.character(PleuralPedal_Control_T0_DE$gene_id[PleuralPedal_Control_T0_DE$dir == "DOWN"]),
+                Hypoxia_2h = as.character(PleuralPedal_Hyp_2h_T1_DE$gene_id[PleuralPedal_Hyp_2h_T1_DE$dir == "DOWN"]),
+                Hypoxia_6h = as.character(PleuralPedal_Hyp_6h_T2_DE$gene_id[PleuralPedal_Hyp_6h_T2_DE$dir == "DOWN"]),
+                Hypoxia_5d = as.character(PleuralPedal_Hyp_5d_T4_DE$gene_id[PleuralPedal_Hyp_5d_T4_DE$dir == "DOWN"]),
+                Hypoxia_6d = as.character(PleuralPedal_Hyp_6d_T5_DE$gene_id)[PleuralPedal_Hyp_6d_T5_DE$dir == "DOWN"],
+                Reoxygenation = as.character(PleuralPedal_Reox_T3_DE$gene_id[PleuralPedal_Reox_T3_DE$dir == "DOWN"]),
+                Recovery = as.character(PleuralPedal_Recovery_T6_DE$gene_id[PleuralPedal_Recovery_T6_DE$dir == "DOWN"]))
+
+DE_lt_P_up <- list(Normoxia = as.character(PleuralPedal_Control_T0_DE$gene_id[PleuralPedal_Control_T0_DE$dir == "UP"]),
+                Hypoxia_2h = as.character(PleuralPedal_Hyp_2h_T1_DE$gene_id[PleuralPedal_Hyp_2h_T1_DE$dir == "UP"]),
+                Hypoxia_6h = as.character(PleuralPedal_Hyp_6h_T2_DE$gene_id[PleuralPedal_Hyp_6h_T2_DE$dir == "UP"]),
+                Hypoxia_5d = as.character(PleuralPedal_Hyp_5d_T4_DE$gene_id[PleuralPedal_Hyp_5d_T4_DE$dir == "UP"]),
+                Hypoxia_6d = as.character(PleuralPedal_Hyp_6d_T5_DE$gene_id)[PleuralPedal_Hyp_6d_T5_DE$dir == "UP"],
+                Reoxygenation = as.character(PleuralPedal_Reox_T3_DE$gene_id[PleuralPedal_Reox_T3_DE$dir == "UP"]),
+                Recovery = as.character(PleuralPedal_Recovery_T6_DE$gene_id[PleuralPedal_Recovery_T6_DE$dir == "UP"]))
+
+
+#calculate the intersection between the differentially expressed gene sets
+set.seed(12345)
+DE_m <- make_comb_mat(DE_lt_P, mode = "distinct")
+DE_m_down <- make_comb_mat(DE_lt_P_down, mode = "distinct")
+DE_m_up <- make_comb_mat(DE_lt_P_up, mode = "distinct")
+
+# exclude self-intersects (total # of diff. genes will be displayed separately)
+DE_m <- DE_m[comb_degree(DE_m) > 1]
+DE_m_down <- DE_m_down[comb_degree(DE_m_down) > 1]
+DE_m_up <- DE_m_up[comb_degree(DE_m_up) > 1]
+
+DE_m <- DE_m[comb_size(DE_m) > 20]
+DE_m_down <- DE_m_down[comb_name(DE_m)]
+DE_m_up <- DE_m_up[comb_name(DE_m)]
+
+m_list <- list(all_DEGs = DE_m,
+               downregulated = DE_m_down,
+               upregulated = DE_m_up)
+
+sapply(m_list, comb_size)
+
+m_list = normalize_comb_mat(m_list)
+sapply(m_list, comb_size)
+
+max_set_size = max(sapply(m_list, set_size))
+max_comb_size = max(sapply(m_list, comb_size))
+
+top_ha = HeatmapAnnotation(
+    "up" = anno_barplot(comb_size(m_list[[3]]), 
+        gp = gpar(fill = "#B31B21"), height = unit(2.5, "cm"), ylim = c(0,350)), 
+    "down" = anno_barplot(comb_size(m_list[[2]]), 
+        gp = gpar(fill = "#1465AC"), height = unit(2.5, "cm"), ylim = c(0,350)), 
+    "all" = anno_barplot(comb_size(m_list[[1]]), 
+        gp = gpar(fill = "black"), height = unit(2.5, "cm"),ylim = c(0,350)),
+    gap = unit(1, "mm"), annotation_name_side = "left", annotation_name_rot = 90)
+
+# the same for using m2 or m3
+ht_P <- UpSet(m_list[[1]], top_annotation = top_ha, 
+      right_annotation = upset_right_annotation(m_list[[1]], add_numbers = TRUE, show_annotation_name = F, axis = F),
+      set_order = c("Normoxia","Hypoxia_2h","Hypoxia_6h","Hypoxia_5d",
+                   "Hypoxia_6d","Reoxygenation","Recovery"));ht_P
+
+pdf(file="gene_expression/figures/Fig2B_UpsetPlotDEGs_Pleural.pdf", width = 8, height = 5)
+draw(ht_P)
+dev.off()
+```
+# Functional Enrichment Combined Figures 
+## GO:BP Abdominal
+```{r fig.height=23, fig.width= 15}
+library(clusterProfiler)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(forcats)
+library(GO.db)
+library(simplifyEnrichment)
+library(rrvgo)
+library(AnnotationHub)
+ah <- AnnotationHub()
+org.Acal.eg.db <- ah[["AH118618"]]
+
+# GO:BP Abdominal
+
+GO_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseGO_results.tab")
+GO_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseGO_results.tab")
+GO_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseGO_results.tab")
+GO_res_T3 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_3/ gseGO_results.tab")
+GO_res_T4 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_4/ gseGO_results.tab")
+GO_res_T5 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_5/ gseGO_results.tab")
+GO_res_T6 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_6/ gseGO_results.tab")
+
+gene_count.GO_T0 <- GO_res_T0 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T1 <- GO_res_T1 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T2 <- GO_res_T2 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T3 <- GO_res_T3 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T4 <- GO_res_T4 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T5 <- GO_res_T5 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T6 <- GO_res_T6 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+df_T0 <- left_join(GO_res_T0, gene_count.GO_T0, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T1 <- left_join(GO_res_T1, gene_count.GO_T1, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T2 <- left_join(GO_res_T2, gene_count.GO_T2, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T3 <- left_join(GO_res_T3, gene_count.GO_T3, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T4 <- left_join(GO_res_T4, gene_count.GO_T4, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T5 <- left_join(GO_res_T5, gene_count.GO_T5, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T6 <- left_join(GO_res_T6, gene_count.GO_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
+
+
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
+                                              Hyp_2h=df_T1,
+                                              Hyp_6h=df_T2,
+                                              Hyp_5d=df_T4,
+                                              Hyp_6d=df_T5,
+                                              Reox=df_T3,
+                                              Reco=df_T6)))
+
+## Set up/downregulation
+merged.res$type = "upregulated"
+merged.res$type[merged.res$NES < 0] = "downregulated"
+
+target_ancestors <- c("GO:0001666","GO:0071456","GO:0002250","GO:0002376","GO:0002283","GO:0002252",
+                      "GO:0002684","GO:0008152","GO:0030324","GO:0042990","GO:0006950",
+                      "GO:0007610","GO:0008285","GO:0043522","GO:0010467","GO:0001501")
+
+merged.res<-merged.res[merged.res$qvalue < 0.05,]
+
+# Ancestor analysis
+
+find_relation_to_ancestors = function (target_ancestors, GOs_to_check, ontology = 'BP') 
+{
+    if (nrow(GOs_to_check) == 0) {
+        return(data.frame(NULL))
+    }
+    GOs_to_check = GOs_to_check[GOs_to_check$ONTOLOGY == ontology,]
+    onto = switch(ontology, MF = GOMFANCESTOR, BP = GOBPANCESTOR, 
+        CC = GOCCANCESTOR)
+    onto = AnnotationDbi::as.list(onto)
+    onto = stack(onto[GOs_to_check$ID])
+    relations_found <- data.frame(term_id = NULL, ancestor = NULL)
+    names_of_ancestor <- c()
+    for (GO in unique(onto$ind)) {
+        sub_onto <- onto[onto$ind == GO, ]
+        if (any(sub_onto$values %in% target_ancestors)) {
+            found_ancestor <- sub_onto$values[sub_onto$values %in% 
+                target_ancestors][1]
+            temp_df <- data.frame(term_id = GO, ancestor = found_ancestor)
+            relations_found <- rbind(relations_found, temp_df)
+        }
+        else if (GO %in% target_ancestors) {
+            temp_df <- data.frame(term_id = GO, ancestor = GO)
+            relations_found <- rbind(relations_found, temp_df)
+        }
+    }
+    if (nrow(relations_found) == 0) {
+        message("NO terms associated with given ancestors were found")
+        return(data.frame(NULL))
+    }
+    num_ancestors <- length(unique(relations_found$ancestor))
+    cols <- RColorBrewer::brewer.pal(12, name = "Paired")
+    names(cols) <- unique(relations_found$ancestor)
+    relations_found$group_color <- cols[relations_found$ancestor]
+    GOs_ancestor_found <- GOs_to_check[GOs_to_check$ID %in% 
+        relations_found$term_id, ]
+    #GOs_ancestor_found <- subset(GOs_ancestor_found, select = -c(group_color))
+    GOs_ancestor_found <- merge(GOs_ancestor_found, relations_found, 
+        by.x="ID", by.y="term_id")
+    GOs_ancestor_found <- GOs_ancestor_found[order(GOs_ancestor_found$ancestor), 
+        ]
+    GOs_ancestor_found$group_color <- factor(GOs_ancestor_found$group_color, 
+        levels = unique(GOs_ancestor_found$group_color))
+    goterms <- Term(target_ancestors)
+    goterms <- as.data.frame(goterms) %>% na.omit()
+    goterms$ancestor <- row.names(goterms)
+    colnames(goterms) <- c("ancestor_name", "ancestor")
+    GOs_ancestor_found <- merge(GOs_ancestor_found, goterms, 
+        by = "ancestor")
+    return(GOs_ancestor_found)
+}
+
+GOs_ancestors_clust<-find_relation_to_ancestors(target_ancestors,merged.res)
+
+
+set.seed(888)
+go_id = merged.res$ID
+mat = GO_similarity(go_id, ont = "BP")
+df = simplifyGO(mat) %>%
+  dplyr::arrange(-cluster)
+df$term <- Term(df$id)
+
+simMat <- calculateSimMatrix(go_id,
+                             orgdb = org.Acal.eg.db,
+                             ont = "BP",
+                             method = "Rel")
+
+scores <- setNames(-log10(merged.res$qvalue), merged.res$ID)
+reducedTerms <- reduceSimMatrix(simMat,
+                                scores,
+                                threshold=0.7,
+                                orgdb=org.Acal.eg.db)
+
+pdf("gene_expression/figures/FigSn_GOTreemap_Abdominal.pdf", width=10, height=10)
+treemapPlot(reducedTerms)
+dev.off()
+
+#Plot Full GO:BP enrichment comparizon
+num_cols<-length(unique(GOs_ancestors_clust$Cluster))
+
+GOs_ancestors_clust$Description <- factor(GOs_ancestors_clust$Description, levels = df$term, ordered = T)
+
+plt <-ggplot(GOs_ancestors_clust, aes(x = Cluster, y = Description, color=ancestor_name, shape=type)) +
+    geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
+    scale_shape_manual(values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated'))
+if(length(unique(GOs_ancestors_clust$setSize))>1){
+    plt<-plt+    scale_size(name   = "term size",
+                            range = c(5,15))
+                
+}
+plt<-plt+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(color = guide_legend(override.aes = list(name = "", size = 8, shape = "\u25B2"))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    labs(shape="direction", colour="GO ancestor term") +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## GO gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+# Color by ancestor
+plt
+
+ggsave(filename = "gene_expression/figures/FigSn_GOenrichment_Abdominal.png", plt, width = 15, height = 23)
+
+#Plot By Reduced terms 
+
+
+GO_reduced <- merged.res[merged.res$ONTOLOGY == "BP",] %>%
+  left_join(reducedTerms, by = c("ID" = "go")) %>%
+  group_by(parent, Cluster) %>%
+  reframe(
+    NES = mean(NES, na.rm = TRUE),
+    GeneRatio = mean(GeneRatio),
+    parent = parent,
+    parentTerm = parentTerm,
+    Cluster = Cluster,
+    cluster = cluster
+  ) %>%
+  na.omit() %>%
+  unique() %>%
+  dplyr::arrange(-cluster, )
+
+GO_reduced$parentTerm <- factor(GO_reduced$parentTerm, levels = unique(GO_reduced$parentTerm), ordered = T)
+GO_reduced$type = "upregulated"
+GO_reduced$type[GO_reduced$NES < 0] = "downregulated"
+
+num_cols<-length(unique(GO_reduced$Cluster))
+plt1 <-ggplot(GO_reduced, aes(x = Cluster, y = parentTerm, color=type, shape=type)) +
+    geom_point(aes(size=GeneRatio,shape=type),show.legend = TRUE) +
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+                      
+if(length(unique(GO_reduced$GeneRatio))>1){
+    plt1<-plt1+    scale_size(name   = "geneRatio",
+                            range = c(5,15))
+                
+}
+plt1<-plt1+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## KEGG gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+
+plt1
+
+ggsave(filename = "gene_expression/figures/FigSn_Reduced_GOBP_Abdominal.png", plt1, width = 15, height = 14)
+
+
+```
+
+## KEGG abdominal
+```{r fig.height=23, fig.width= 15}
+KEGG_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseKEGG_results.tab")
+KEGG_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseKEGG_results.tab")
+KEGG_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseKEGG_results.tab")
+KEGG_res_T3 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_3/ gseKEGG_results.tab")
+KEGG_res_T4 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_4/ gseKEGG_results.tab")
+KEGG_res_T5 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_5/ gseKEGG_results.tab")
+KEGG_res_T6 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_6/ gseKEGG_results.tab")
+
+gene_count.KEGG_T0 <- KEGG_res_T0 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T1 <- KEGG_res_T1 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T2 <- KEGG_res_T2 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T3 <- KEGG_res_T3 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T4 <- KEGG_res_T4 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T5 <- KEGG_res_T5 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T6 <- KEGG_res_T6 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+df_T0 <- left_join(KEGG_res_T0, gene_count.KEGG_T0, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T1 <- left_join(KEGG_res_T1, gene_count.KEGG_T1, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T2 <- left_join(KEGG_res_T2, gene_count.KEGG_T2, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T3 <- left_join(KEGG_res_T3, gene_count.KEGG_T3, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T4 <- left_join(KEGG_res_T4, gene_count.KEGG_T4, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T5 <- left_join(KEGG_res_T5, gene_count.KEGG_T5, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T6 <- left_join(KEGG_res_T6, gene_count.KEGG_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
+
+
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
+                                              Hyp_2h=df_T1,
+                                              Hyp_6h=df_T2,
+                                              Hyp_5d=df_T4,
+                                              Hyp_6d=df_T5,
+                                              Reox=df_T3,
+                                              Reco=df_T6)))
+
+
+
+## Set up/downregulation
+merged.res$type = "upregulated"
+merged.res$type[merged.res$NES < 0] = "downregulated"
+
+merged.res<-merged.res[merged.res$qvalue < 0.05,]
+
+merged.res <- merged.res %>%
+  mutate(Description = factor(Description))
+
+num_cols<-length(unique(merged.res$Cluster))
+plt <-ggplot(merged.res, aes(x = Cluster, y = Description, color=type, shape=type)) +
+    geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+                      
+if(length(unique(merged.res$setSize))>1){
+    plt<-plt+    scale_size(name   = "term size",
+                            range = c(5,15))
+                
+}
+plt<-plt+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## KEGG gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+
+plt
+
+ggsave(filename = "gene_expression/figures/FigSn_KEGGenrichment_Abdominal.png", plt, width = 15, height = 23)
+```
+
+## MKEGG abdominal
+```{r fig.width=13, fig.height=6}
+
+MKEGG_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseMKEGG_results.tab")
+MKEGG_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseMKEGG_results.tab")
+MKEGG_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseMKEGG_results.tab")
+MKEGG_res_T3 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_3/ gseMKEGG_results.tab")
+MKEGG_res_T4 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_4/ gseMKEGG_results.tab")
+#MKEGG_res_T5 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_5/ gseMKEGG_results.tab")
+MKEGG_res_T6 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_6/ gseMKEGG_results.tab")
+
+gene_count.MKEGG_T0 <- MKEGG_res_T0 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T1 <- MKEGG_res_T1 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T2 <- MKEGG_res_T2 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T3 <- MKEGG_res_T3 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T4 <- MKEGG_res_T4 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+#gene_count.MKEGG_T5 <- MKEGG_res_T5 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T6 <- MKEGG_res_T6 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+df_T0 <- left_join(MKEGG_res_T0, gene_count.MKEGG_T0, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T1 <- left_join(MKEGG_res_T1, gene_count.MKEGG_T1, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T2 <- left_join(MKEGG_res_T2, gene_count.MKEGG_T2, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T3 <- left_join(MKEGG_res_T3, gene_count.MKEGG_T3, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T4 <- left_join(MKEGG_res_T4, gene_count.MKEGG_T4, by = "ID") %>% mutate(GeneRatio = count/setSize)
+#df_T5 <- left_join(MKEGG_res_T5, gene_count.MKEGG_T5, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T6 <- left_join(MKEGG_res_T6, gene_count.MKEGG_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
+
+
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
+                                              Hyp_2h=df_T1,
+                                              Hyp_6h=df_T2,
+                                              Hyp_5d=df_T4,
+                                              #Hyp_6d=df_T5,
+                                              Reox=df_T3,
+                                              Reco=df_T6)))
+
+## Set up/downregulation
+merged.res$type = "upregulated"
+merged.res$type[merged.res$NES < 0] = "downregulated"
+
+merged.res<-merged.res[merged.res$qvalue < 0.05,]
+
+merged.res <- merged.res %>%
+  mutate(Description = factor(Description))
+
+num_cols<-length(unique(merged.res$Cluster))
+plt <-ggplot(merged.res, aes(x = Cluster, y = Description, color=type, shape=type)) +
+    geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+                      
+if(length(unique(merged.res$setSize))>1){
+    plt<-plt+    scale_size(name   = "term size",
+                            range = c(5,15))
+                
+}
+plt<-plt+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## MKEGG gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+
+plt
+ggsave(filename = "gene_expression/figures/FigSn_MKEGGenrichment_Abdominal.png", plt, width = 13, height = 6)
+```
+
+##WIKIPathway abdominal
+```{r fig.width=13, fig.height=23}
+
+WP_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseWP_results.tab")
+WP_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseWP_results.tab")
+WP_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseWP_results.tab")
+WP_res_T3 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_3/ gseWP_results.tab")
+WP_res_T4 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_4/ gseWP_results.tab")
+WP_res_T5 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_5/ gseWP_results.tab")
+WP_res_T6 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_6/ gseWP_results.tab")
+
+gene_count.WP_T0 <- WP_res_T0 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T1 <- WP_res_T1 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T2 <- WP_res_T2 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T3 <- WP_res_T3 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T4 <- WP_res_T4 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T5 <- WP_res_T5 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T6 <- WP_res_T6 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+df_T0 <- left_join(WP_res_T0, gene_count.WP_T0, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T1 <- left_join(WP_res_T1, gene_count.WP_T1, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T2 <- left_join(WP_res_T2, gene_count.WP_T2, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T3 <- left_join(WP_res_T3, gene_count.WP_T3, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T4 <- left_join(WP_res_T4, gene_count.WP_T4, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T5 <- left_join(WP_res_T5, gene_count.WP_T5, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T6 <- left_join(WP_res_T6, gene_count.WP_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
+
+
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
+                                              Hyp_2h=df_T1,
+                                              Hyp_6h=df_T2,
+                                              Hyp_5d=df_T4,
+                                              Hyp_6d=df_T5,
+                                              Reox=df_T3,
+                                              Reco=df_T6)))
+
+## Set up/downregulation
+merged.res$type = "upregulated"
+merged.res$type[merged.res$NES < 0] = "downregulated"
+
+merged.res<-merged.res[merged.res$qvalue < 0.05,]
+
+merged.res <- merged.res %>%
+  mutate(Description = factor(Description))
+
+num_cols<-length(unique(merged.res$Cluster))
+plt <-ggplot(merged.res, aes(x = Cluster, y = Description, color=type, shape=type)) +
+    geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+                      
+if(length(unique(merged.res$setSize))>1){
+    plt<-plt+    scale_size(name   = "term size",
+                            range = c(5,15))
+                
+}
+plt<-plt+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## WP gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+
+plt
+ggsave(filename = "gene_expression/figures/FigSn_WP_enrichment_Abdominal.png", plt, width = 13, height = 23)
+```
+## GO:BP PleuralPedal
+
+```{r fig.width=15, fig.height=30}
+
+
+GO_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseGO_results.tab")
+GO_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseGO_results.tab")
+GO_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseGO_results.tab")
+GO_res_T3 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_3/ gseGO_results.tab")
+GO_res_T4 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_4/ gseGO_results.tab")
+GO_res_T5 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_5/ gseGO_results.tab")
+GO_res_T6 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_6/ gseGO_results.tab")
+
+gene_count.GO_T0 <- GO_res_T0 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T1 <- GO_res_T1 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T2 <- GO_res_T2 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T3 <- GO_res_T3 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T4 <- GO_res_T4 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T5 <- GO_res_T5 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.GO_T6 <- GO_res_T6 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+df_T0 <- left_join(GO_res_T0, gene_count.GO_T0, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T1 <- left_join(GO_res_T1, gene_count.GO_T1, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T2 <- left_join(GO_res_T2, gene_count.GO_T2, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T3 <- left_join(GO_res_T3, gene_count.GO_T3, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T4 <- left_join(GO_res_T4, gene_count.GO_T4, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T5 <- left_join(GO_res_T5, gene_count.GO_T5, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T6 <- left_join(GO_res_T6, gene_count.GO_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
+
+
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
+                                              Hyp_2h=df_T1,
+                                              Hyp_6h=df_T2,
+                                              Hyp_5d=df_T4,
+                                              Hyp_6d=df_T5,
+                                              Reox=df_T3,
+                                              Reco=df_T6)))
+
+## Set up/downregulation
+merged.res$type = "upregulated"
+merged.res$type[merged.res$NES < 0] = "downregulated"
+
+target_ancestors <- c("GO:0001666","GO:0071456","GO:0002250","GO:0002376","GO:0002283","GO:0002252",
+                      "GO:0002684","GO:0008152","GO:0030324","GO:0042990","GO:0006950",
+                      "GO:0007610","GO:0008285","GO:0043522","GO:0010467","GO:0001501")
+
+merged.res<-merged.res[merged.res$qvalue < 0.05,]
+
+GOs_ancestors_clust<-find_relation_to_ancestors(target_ancestors,merged.res)
+
+set.seed(888)
+go_id = merged.res$ID
+mat = GO_similarity(go_id, ont = "BP")
+df = simplifyGO(mat) %>%
+  dplyr::arrange(-cluster)
+df$term <- Term(df$id)
+
+simMat <- calculateSimMatrix(go_id,
+                             orgdb = org.Acal.eg.db,
+                             ont = "BP",
+                             method = "Rel")
+
+scores <- setNames(-log10(merged.res$qvalue), merged.res$ID)
+reducedTerms <- reduceSimMatrix(simMat,
+                                scores,
+                                threshold=0.7,
+                                orgdb=org.Acal.eg.db)
+
+pdf("gene_expression/figures/FigSn_GOTreemap_Pleural.pdf", width=10, height=10)
+treemapPlot(reducedTerms)
+dev.off()
+
+num_cols<-length(unique(GOs_ancestors_clust$Cluster))
+plt <-ggplot(GOs_ancestors_clust, aes(x = Cluster, y = Description, color=ancestor_name, shape=type)) +
+    geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
+    scale_shape_manual(values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated'))
+if(length(unique(GOs_ancestors_clust$setSize))>1){
+    plt<-plt+    scale_size(name   = "term size",
+                            range = c(5,15))
+                
+}
+plt<-plt+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(color = guide_legend(override.aes = list(name = "", size = 8, shape = "\u25B2"))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    labs(shape="direction", colour="GO ancestor term") +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## GO gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+# Color by ancestor
+
+plt
+
+ggsave(filename = "gene_expression/figures/FigSn_GOenrichment_Pleural.png", plt, width = 15, height = 30)
+
+GO_reduced <- merged.res[merged.res$ONTOLOGY == "BP",] %>%
+  left_join(reducedTerms, by = c("ID" = "go")) %>%
+  group_by(parent, Cluster) %>%
+  reframe(
+    NES = mean(NES, na.rm = TRUE),
+    GeneRatio = mean(GeneRatio),
+    parent = parent,
+    parentTerm = parentTerm,
+    Cluster = Cluster,
+    cluster = cluster
+  ) %>%
+  na.omit() %>%
+  unique() %>%
+  dplyr::arrange(-cluster, )
+
+GO_reduced$parentTerm <- factor(GO_reduced$parentTerm, levels = unique(GO_reduced$parentTerm), ordered = T)
+GO_reduced$type = "upregulated"
+GO_reduced$type[GO_reduced$NES < 0] = "downregulated"
+
+num_cols<-length(unique(GO_reduced$Cluster))
+plt1 <-ggplot(GO_reduced, aes(x = Cluster, y = parentTerm, color=type, shape=type)) +
+    geom_point(aes(size=GeneRatio,shape=type),show.legend = TRUE) +
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+                      
+if(length(unique(GO_reduced$GeneRatio))>1){
+    plt1<-plt1+    scale_size(name   = "geneRatio",
+                            range = c(5,15))
+                
+}
+plt1<-plt1+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## KEGG gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+
+plt1
+
+ggsave(filename = "gene_expression/figures/FigSn_Reduced_GOBP_Pleural.png", plt1, width = 15, height = 14)
+```
+## KEGG_pleural/pedal
+
+```{r fig.height=20, fig.width= 15}
+KEGG_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseKEGG_results.tab")
+KEGG_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseKEGG_results.tab")
+KEGG_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseKEGG_results.tab")
+KEGG_res_T3 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_3/ gseKEGG_results.tab")
+KEGG_res_T4 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_4/ gseKEGG_results.tab")
+KEGG_res_T5 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_5/ gseKEGG_results.tab")
+KEGG_res_T6 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_6/ gseKEGG_results.tab")
+
+gene_count.KEGG_T0 <- KEGG_res_T0 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T1 <- KEGG_res_T1 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T2 <- KEGG_res_T2 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T3 <- KEGG_res_T3 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T4 <- KEGG_res_T4 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T5 <- KEGG_res_T5 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.KEGG_T6 <- KEGG_res_T6 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+df_T0 <- left_join(KEGG_res_T0, gene_count.KEGG_T0, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T1 <- left_join(KEGG_res_T1, gene_count.KEGG_T1, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T2 <- left_join(KEGG_res_T2, gene_count.KEGG_T2, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T3 <- left_join(KEGG_res_T3, gene_count.KEGG_T3, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T4 <- left_join(KEGG_res_T4, gene_count.KEGG_T4, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T5 <- left_join(KEGG_res_T5, gene_count.KEGG_T5, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T6 <- left_join(KEGG_res_T6, gene_count.KEGG_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
+
+
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
+                                              Hyp_2h=df_T1,
+                                              Hyp_6h=df_T2,
+                                              Hyp_5d=df_T4,
+                                              Hyp_6d=df_T5,
+                                              Reox=df_T3,
+                                              Reco=df_T6)))
+
+## Set up/downregulation
+merged.res$type = "upregulated"
+merged.res$type[merged.res$NES < 0] = "downregulated"
+
+merged.res<-merged.res[merged.res$qvalue < 0.05,]
+
+merged.res <- merged.res %>%
+  mutate(Description = factor(Description))
+
+num_cols<-length(unique(merged.res$Cluster))
+plt <-ggplot(merged.res, aes(x = Cluster, y = Description, color=type, shape=type)) +
+    geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+                      
+if(length(unique(merged.res$setSize))>1){
+    plt<-plt+    scale_size(name   = "term size",
+                            range = c(5,15))
+                
+}
+plt<-plt+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## KEGG gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+
+plt
+
+
+ggsave(filename = "gene_expression/figures/FigSn_KEGGenrichment_Pleural.png", plt, width = 15, height = 20)
+```
+
+## MKEGG pleural/pedal
+```{r fig.width=15, fig.height=6}
+
+MKEGG_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseMKEGG_results.tab")
+MKEGG_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseMKEGG_results.tab")
+MKEGG_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseMKEGG_results.tab")
+MKEGG_res_T3 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_3/ gseMKEGG_results.tab")
+MKEGG_res_T4 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_4/ gseMKEGG_results.tab")
+MKEGG_res_T5 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_5/ gseMKEGG_results.tab")
+MKEGG_res_T6 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_6/ gseMKEGG_results.tab")
+
+gene_count.MKEGG_T0 <- MKEGG_res_T0 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T1 <- MKEGG_res_T1 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T2 <- MKEGG_res_T2 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T3 <- MKEGG_res_T3 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T4 <- MKEGG_res_T4 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T5 <- MKEGG_res_T5 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.MKEGG_T6 <- MKEGG_res_T6 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+df_T0 <- left_join(MKEGG_res_T0, gene_count.MKEGG_T0, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T1 <- left_join(MKEGG_res_T1, gene_count.MKEGG_T1, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T2 <- left_join(MKEGG_res_T2, gene_count.MKEGG_T2, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T3 <- left_join(MKEGG_res_T3, gene_count.MKEGG_T3, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T4 <- left_join(MKEGG_res_T4, gene_count.MKEGG_T4, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T5 <- left_join(MKEGG_res_T5, gene_count.MKEGG_T5, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T6 <- left_join(MKEGG_res_T6, gene_count.MKEGG_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
+
+
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
+                                              Hyp_2h=df_T1,
+                                              Hyp_6h=df_T2,
+                                              Hyp_5d=df_T4,
+                                              Hyp_6d=df_T5,
+                                              Reox=df_T3,
+                                              Reco=df_T6)))
+
+## Set up/downregulation
+merged.res$type = "upregulated"
+merged.res$type[merged.res$NES < 0] = "downregulated"
+
+merged.res<-merged.res[merged.res$qvalue < 0.05,]
+
+merged.res <- merged.res %>%
+  mutate(Description = factor(Description))
+
+num_cols<-length(unique(merged.res$Cluster))
+plt <-ggplot(merged.res, aes(x = Cluster, y = Description, color=type, shape=type)) +
+    geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+                      
+if(length(unique(merged.res$setSize))>1){
+    plt<-plt+    scale_size(name   = "term size",
+                            range = c(5,15))
+                
+}
+plt<-plt+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## MKEGG gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+plt
+
+ggsave(filename = "gene_expression/figures/FigSn_MKEGGenrichment_pleural.png", plt, width = 15, height = 6)
+
+```
+
+##WIKIPathway pleural
+```{r fig.width=13, fig.height=23}
+
+WP_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseWP_results.tab")
+WP_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseWP_results.tab")
+WP_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseWP_results.tab")
+WP_res_T3 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_3/ gseWP_results.tab")
+WP_res_T4 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_4/ gseWP_results.tab")
+WP_res_T5 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_5/ gseWP_results.tab")
+WP_res_T6 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Pleural/GSEA_results/Lab_cross_vs_Wild_cross_TP_6/ gseWP_results.tab")
+
+gene_count.WP_T0 <- WP_res_T0 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T1 <- WP_res_T1 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T2 <- WP_res_T2 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T3 <- WP_res_T3 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T4 <- WP_res_T4 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T5 <- WP_res_T5 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+gene_count.WP_T6 <- WP_res_T6 %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+df_T0 <- left_join(WP_res_T0, gene_count.WP_T0, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T1 <- left_join(WP_res_T1, gene_count.WP_T1, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T2 <- left_join(WP_res_T2, gene_count.WP_T2, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T3 <- left_join(WP_res_T3, gene_count.WP_T3, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T4 <- left_join(WP_res_T4, gene_count.WP_T4, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T5 <- left_join(WP_res_T5, gene_count.WP_T5, by = "ID") %>% mutate(GeneRatio = count/setSize)
+df_T6 <- left_join(WP_res_T6, gene_count.WP_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
+
+
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
+                                              Hyp_2h=df_T1,
+                                              Hyp_6h=df_T2,
+                                              Hyp_5d=df_T4,
+                                              Hyp_6d=df_T5,
+                                              Reox=df_T3,
+                                              Reco=df_T6)))
+
+## Set up/downregulation
+merged.res$type = "upregulated"
+merged.res$type[merged.res$NES < 0] = "downregulated"
+
+merged.res<-merged.res[merged.res$qvalue < 0.05,]
+
+merged.res <- merged.res %>%
+  mutate(Description = factor(Description))
+
+num_cols<-length(unique(merged.res$Cluster))
+plt <-ggplot(merged.res, aes(x = Cluster, y = Description, color=type, shape=type)) +
+    geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+                      
+if(length(unique(merged.res$setSize))>1){
+    plt<-plt+    scale_size(name   = "term size",
+                            range = c(5,15))
+                
+}
+plt<-plt+
+    scale_y_discrete(labels = function(x) str_wrap(str_replace_all(x, "foo" , "\n"),width = 60)) +
+    theme_bw(base_size=15) +
+    theme(axis.text.x=element_text(angle=-45,vjust=0)) +
+    guides(shape = guide_legend(override.aes = list(size = 8))) +
+    guides(size = guide_legend(override.aes = list(shape = "\u25B2"))) +
+    ylab("") +
+    xlab("") +
+    facet_wrap(~Cluster,scales='free_x',ncol=num_cols)
+
+## WP gene set enrichment
+# Upregulated (Higher expression in Lab_cross)
+# Downregulated (Lower expression in Lab_cross)
+
+plt
+ggsave(filename = "gene_expression/figures/FigSn_WP_enrichment_Pleural.png", plt, width = 13, height = 23)
+```

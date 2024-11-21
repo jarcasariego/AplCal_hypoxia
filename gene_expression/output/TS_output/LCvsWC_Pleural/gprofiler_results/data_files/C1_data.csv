@@ -1,0 +1,3 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.022472497823169,61,26,3,0.115384615384615,0.0491803278688525,GO:0016706,GO:MF,2-oxoglutarate-dependent dioxygenase activity,20212,2912,GO:0016705/GO:0051213
+2,query_1,TRUE,0.0259427949156901,178,26,4,0.153846153846154,0.0224719101123595,GO:0016705,GO:MF,oxidoreductase activity. acting on paired donors. with incorporation or reduction of molecular oxygen,20212,2911,GO:0016491

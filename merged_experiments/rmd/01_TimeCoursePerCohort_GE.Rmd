@@ -1,0 +1,853 @@
+---
+title: "Timecourse analysis of Lab and Wild cohorts under hypoxia"
+author: Javier A. Rodriguez Casariego
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+```{r setup, include=FALSE}
+# Set the working directory to the R project's root folder
+setwd("/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+
+# Ensure the working directory is not reset for each chunk
+knitr::opts_knit$set(root.dir = "/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+knitr::opts_knit$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+
+```{r}
+library(knitr)
+library(TimeSeriesAnalysis)
+library(SummarizedExperiment)
+library(ggplot2)
+library(svglite)
+library(tidyverse)
+library(Cairo)
+library(gprofiler2)
+library(stringr)
+library(DESeq2)    # BiocManager::install('DESeq2')
+library(limma)     # BiocManager::install('limma')
+library(ggpubr)
+library(cowplot)
+library(org.Hs.eg.db)
+
+```
+
+# TimeSeries analysis
+
+## Prepare data
+```{r Load and inspect data, eval=FALSE, include=FALSE}
+
+#paste0(getwd(),output_dir, sample, ".counts")
+#name <- gsub( "(?:[^_]+_){4}([^_ ]+)*$","", files)
+  
+  # STAR quantMode geneCounts output:
+  #column 1: gene ID
+  #column 2: counts for unstranded RNA-seq
+  #column 3: counts for the 1st read strand aligned with RNA (htseq-count option -s yes)
+  #column 4: counts for the 2nd read strand aligned with RNA (htseq-count option -s reverse)
+  
+sampleNames <- list.files(path = glue::glue(getwd(), "/merged_experiments/data/GeneCounts/"), pattern = "*.ReadsPerGene.out.tab") %>%
+    stringr::str_split_fixed("_", n = 4) %>%
+    tibble::as_tibble() %>%
+    dplyr::mutate(Name = V1) %>%
+    dplyr::select(Name) %>% 
+    purrr::flatten_chr()
+  
+geneIDs <- list.files(path = glue::glue(getwd(), "/merged_experiments/data/GeneCounts"), pattern = "*.ReadsPerGene.out.tab", full.names = T)[1] %>% 
+    data.table::fread(select = 1) %>%
+    purrr::flatten_chr()
+  
+countMatrix <- list.files(path = glue::glue(getwd(), "/merged_experiments/data/GeneCounts"), pattern = "*.ReadsPerGene.out.tab", full.names = T) %>%
+    purrr::map_dfc(data.table::fread, select = 3, data.table = F) %>%
+    magrittr::set_colnames(sampleNames) %>% 
+    magrittr::set_rownames(geneIDs)
+  
+countMatrix <- countMatrix[-c(1:4),]
+
+sdat0 <- read_csv("merged_experiments/data/sample_metadata.csv") %>%
+  filter(sample_ID %in% sampleNames)
+sdat0$treatment <- gsub("C", "Control", sdat0$treatment)
+sdat0$batch <- gsub(60, "Lab_cross", sdat0$batch)
+sdat0$batch <- gsub(71, "Wild_cross", sdat0$batch)
+sdat0$batch <- gsub(1, "Wild_cross", sdat0$batch)
+sdat0$batch <- gsub("ACE006", "Lab_cross", sdat0$batch)
+
+sdat <- sdat0 %>%
+  arrange(sample_ID) %>%                            
+  column_to_rownames(var = "sample_ID")   
+
+sdat_A <- sdat0 %>%
+  arrange(sample_ID) %>%                            
+  filter(tissue == "A") %>%
+  filter(treatment != "LtH_7") %>%
+  filter(treatment != "Hyp_T2h") %>%
+  filter(treatment != "Reox") %>%
+  column_to_rownames(var = "sample_ID")              
+
+sdat_P <- sdat0 %>%
+  arrange(sample_ID) %>%                            
+  filter(tissue == "Pp") %>%
+  column_to_rownames(var = "sample_ID") 
+
+countMatrix_A <- countMatrix[, colnames(countMatrix) %in% rownames(sdat_A)]
+countMatrix_P <- countMatrix[, colnames(countMatrix) %in% rownames(sdat_P)]
+
+# Create full DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = countMatrix,
+                              colData = sdat,
+                              design = ~ treatment*batch*tissue)
+### Remove genes counted zero times
+dds <- dds[ rowSums(counts(dds)) > 0, ]
+
+# Read in count totals of raw, postQC, and mapped reads
+count_summ <- read.table("gene_expression/data/count_totals.txt") %>%
+  mutate(sample_ID = str_sub(V1, 1, 7),
+         raw = V2, post_qc = V3, mapped = V4) %>%
+  select(sample_ID, raw, post_qc, mapped) %>%
+  gather(stage, count, -sample_ID) 
+
+# Summarize counts for only samples
+counttable <- sdat0 %>%
+  left_join(count_summ) %>%
+  group_by(stage) %>%
+  summarize(`Min. (per sample)` = min(count),
+            `Max. (per sample)` = max(count),
+            `Median (per sample)` = median(count),
+            Total = sum(count)) %>%
+  arrange(rev(stage))
+ 
+counttable <- counttable[-1,]
+counttable %>%
+   knitr::kable(caption = "Total read counts")
+
+# Number of samples
+nsamples <- ncol(counts(dds))
+
+# Number of reads per sample
+rps <- qplot(colSums(counts(dds))) +
+  labs(x = "Mapped reads per sample", y = "Number of samples",
+       title = "Mapped reads per sample") +
+  geom_label(aes(x = 6e5, y = 13, label = paste(nsamples, "samples")))
+
+# Number of genes
+ngenes <- nrow(counts(dds))
+# Number of reads per gene
+rpg <- qplot(log10(rowSums(counts(dds))), bins = 16) +
+  labs(x = "log10(Mapped reads per gene)", y = "Number of genes",
+       title = "Mapped reads per gene") +
+  geom_label(aes(x = 4, y = 1500, label = paste(ngenes, "genes")))
+
+countfig <- plot_grid(rps, rpg)
+
+countfig
+
+# Save table and fig to include in supplemental information
+write_csv(counttable, path = "gene_expression/output/readcounttable.csv")
+ggsave(countfig, file = "gene_expression/figures/FigS1_TagSeq_seq_Stats.png", device = "png", width = 150, height = 85, units = "mm")
+
+# Check how data looks like, check outliers for each tissue
+
+### Create DESeq objects
+
+# Create full DESeqDataSet
+dds_A <- DESeqDataSetFromMatrix(countData = countMatrix_A,
+                              colData = sdat_A,
+                              design = ~ batch*treatment)
+dds_P <- DESeqDataSetFromMatrix(countData = countMatrix_P,
+                              colData = sdat_P,
+                              design = ~ batch*treatment)
+# Remove genes with less than 1 mean count across samples
+dds_A <- dds_A[ rowMeans(counts(dds_A)) > 1, ]
+dds_P <- dds_P[ rowMeans(counts(dds_P)) > 1, ]
+# Normalize expression data for visualization purposes using VST tranformation
+vsd_A <- vst(dds_A, blind = TRUE)
+vsd_P <- vst(dds_P, blind = TRUE)
+
+# GLM PCA
+library(glmpca)
+gpca_A <- glmpca(counts(dds_A), L=2)
+gpca_A.dat <- gpca_A$factors
+gpca_A.dat$Sample <- dds_A$animal_ID
+gpca_A.dat$Treatment <- dds_A$treatment
+gpca_A.dat$batch <- dds_A$batch
+
+pglmpca_A <- ggplot(gpca_A.dat, aes(x = dim1, y = dim2, color = batch, label = "Sample")) +
+  geom_point(size =3) + coord_fixed() +   
+  ggtitle("glmpca - Generalized PCA, ")
+pglmpca_A
+
+gpca_P <- glmpca(counts(dds_P), L=2)
+gpca_P.dat <- gpca_P$factors
+gpca_P.dat$Sample <- dds_P$animal_ID
+gpca_P.dat$Treatment <- dds_P$treatment
+gpca_P.dat$batch <- dds_P$batch
+
+pglmpca_P <- ggplot(gpca_P.dat, aes(x = dim1, y = dim2, color = batch, label = "Sample")) +
+  geom_point(size =3) + coord_fixed() +   
+  ggtitle("glmpca - Generalized PCA, ")
+pglmpca_P
+
+# Poisson distance heatmap
+library(PoiClaClu)
+library(RColorBrewer)
+library(ComplexHeatmap)
+poisd_A <- PoissonDistance(t(counts(dds_A)))
+samplePoisDistMatrix_A <- as.matrix(poisd_A$dd)
+colnames(samplePoisDistMatrix_A) <- dds_A$animal_ID
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+pheatmap(samplePoisDistMatrix_A,
+         clustering_distance_rows = poisd_A$dd,
+         clustering_distance_cols = poisd_A$dd,
+         col = colors)
+
+poisd_P <- PoissonDistance(t(counts(dds_P)))
+samplePoisDistMatrix_P <- as.matrix(poisd_P$dd)
+colnames(samplePoisDistMatrix_P) <- dds_P$animal_ID
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+pheatmap(samplePoisDistMatrix_P,
+         clustering_distance_rows = poisd_P$dd,
+         clustering_distance_cols = poisd_P$dd,
+         col = colors)
+```
+Ac175A is a clear outlier. I will eliminate it of further analyses 
+
+```{r prepare and save data files for each comparizon, eval=FALSE, include=FALSE}
+# Create a folder for the contrast and save a metadata file and count files in the TimeSeries format
+## Lab_cross vs Wild_cross abdominal
+
+dir.create(paste0('merged_experiments/data/','LCvsWC_A'))
+
+sdat1 <- sdat0 %>%
+  mutate(group = sdat0$batch,
+         sample = sdat0$sample_ID) %>%
+  mutate(timepoint = sdat0$treatment,
+         timepoint = gsub("Control", 0, timepoint),
+         timepoint = gsub("H_6h", 1, timepoint),
+         timepoint = gsub("H_6d", 6, timepoint),
+         timepoint = gsub("Recovery", 7, timepoint)) %>%
+  filter(treatment != "LtH_7") %>%
+  filter(treatment != "Hyp_T2h") %>%
+  filter(treatment != "Reox") %>%
+  filter(tissue == "A") %>%
+  filter(sample != "AC175A") %>%
+  group_by(group, timepoint) %>%
+  mutate(group_initials = case_when(
+           group == "Lab_cross" ~ "LC",
+           group == "Wild_cross" ~ "WC"),
+         replicate = paste0(group_initials, "_", row_number())) %>%
+  ungroup() %>%
+  select(sample, replicate, timepoint, group, treatment)
+write_csv(sdat1, "merged_experiments/data/LCvsWC_A/sample_meta.csv")
+  
+
+# Directory where files will be saved
+dir.create(paste0('merged_experiments/data/','LCvsWC_A/counts'))
+output_dir <- "/merged_experiments/data/LCvsWC_A/counts/"  # Specify your directory
+
+# Loop through each sample (column) in the matrix
+for (sample in colnames(countMatrix[,sdat1$sample])) {
+  # Subset the matrix to get the data for the current sample (column)
+  sample_data <- countMatrix[, sample, drop = FALSE]
+  # Save the sample data to a tab-delimited file
+  write.table(sample_data, file = paste0(getwd(),output_dir, sample, ".counts"), sep = "\t", col.names = FALSE, quote = FALSE)
+}
+
+
+```
+
+```{r modify heatmap function to fix issue with Cairo, include=FALSE}
+## I solved the issue with Cairo in my system but this can be useful for others
+library(ComplexHeatmap)
+PART_heat_map <- function (object, heat_name = "custom_heat_map") 
+{
+    PART_res <- slot(object, "PART_results")
+    row_annot <- rowAnnotation(gene_cluster = PART_res$part_data$gene_cluster, 
+        col = list(gene_cluster = PART_res$cluster_info[["colored_clust_rows"]]), 
+        show_annotation_name = FALSE, annotation_legend_param = list(title = "clusters", 
+            at = unique(PART_res$part_data$gene_cluster), labels = unique(PART_res$cluster_map$cluster)))
+    top_annot_results <- prepare_top_annotation_PART_heat(object)
+    top_annot_labels <- top_annot_results[[1]]
+    top_annot_no_labels <- top_annot_results[[2]]
+    col_split <- top_annot_results[[3]]
+    col_split_vect <- levels(col_split)
+    gap_vect <- c()
+    for (idx in 1:length(col_split_vect)) {
+        if (idx != length(col_split_vect)) {
+            val1 <- unlist(strsplit(as.character(col_split_vect[idx]), 
+                "_"))[1]
+            val2 <- unlist(strsplit(as.character(col_split_vect[idx + 
+                1]), "_"))[1]
+            if (val1 != val2) {
+                gap_vect <- c(gap_vect, 4)
+            }
+            else {
+                gap_vect <- c(gap_vect, 0.5)
+            }
+        }
+    }
+    if (slot(object, "group_names")[1] == slot(object, "group_names")[2]) {
+        group_cols <- slot(object, "group_colors")[1]
+    }
+    else {
+        group_cols <- slot(object, "group_colors")
+    }
+    lgd = Legend(labels = names(group_cols), title = "groups", 
+        legend_gp = gpar(fill = unname(group_cols)))
+    sorted_matrix <- as.matrix(PART_res$part_data[, 3:ncol(PART_res$part_data)])
+    if (is.null(heat_name) == TRUE) {
+        pdf(NULL)
+        PART_plot <- draw(Heatmap(sorted_matrix, name = "Z-score", 
+            cluster_columns = FALSE, cluster_rows = FALSE, show_column_dend = TRUE, 
+            show_row_dend = FALSE, row_names_gp = gpar(fontsize = 8), 
+            left_annotation = row_annot, row_order = row.names(PART_res$part_data), 
+            show_row_names = FALSE, top_annotation = top_annot_no_labels, 
+            column_split = col_split, cluster_column_slices = TRUE, 
+            column_gap = unit(gap_vect, "mm"), show_column_names = FALSE, 
+            border = FALSE, column_title = NULL), annotation_legend_list = lgd)
+        dev.off()
+        return(PART_plot)
+    }
+    else {
+        PART_save_data <- paste0(heat_name, "_data.csv")
+        PART_save_cmap <- paste0(heat_name, "_cmap.csv")
+        write.csv(PART_res$part_matrix, PART_save_data)
+        write.csv(PART_res$cluster_map, PART_save_cmap)
+    }
+    png(paste0(heat_name, "_with_names.png"), height = 30, width = 20)
+    draw(Heatmap(sorted_matrix, name = "Z-score", cluster_columns = FALSE, 
+        cluster_rows = FALSE, show_column_dend = TRUE, show_row_dend = FALSE, 
+        row_names_gp = gpar(fontsize = 8), left_annotation = row_annot, 
+        row_order = row.names(PART_res$part_data), show_row_names = TRUE, 
+        top_annotation = top_annot_labels, column_split = col_split, 
+        cluster_column_slices = TRUE, column_gap = unit(gap_vect, 
+            "mm"), show_column_names = FALSE, border = FALSE, 
+        column_title = NULL), annotation_legend_list = lgd)
+    trash <- capture.output(dev.off())
+    png(paste0(heat_name, ".png"))
+    draw(Heatmap(sorted_matrix, name = "Z-score", cluster_columns = FALSE, 
+        cluster_rows = FALSE, show_column_dend = TRUE, show_row_dend = FALSE, 
+        row_names_gp = gpar(fontsize = 8), left_annotation = row_annot, 
+        row_order = row.names(PART_res$part_data), show_row_names = FALSE, 
+        top_annotation = top_annot_no_labels, column_split = col_split, 
+        cluster_column_slices = TRUE, column_gap = unit(gap_vect, 
+            "mm"), show_column_names = FALSE, border = FALSE, 
+        column_title = NULL), annotation_legend_list = lgd)
+    trash <- capture.output(dev.off())
+}
+
+wrapper_cluster_trajectory <- function(object, cluster_traj_dta, mean_cluster_traj_dta, yaxis_name, 
+                                       log_TP = FALSE, plot_name = "Ctraj") {
+    
+    if (length(unique(cluster_traj_dta$timepoint)) == 1) {
+        save_name <- paste0(plot_name, ".png")
+        the_plot <- plot_cluster_traj(object, cluster_traj_dta, 
+                                      mean_cluster_traj_dta, yaxis_name = yaxis_name)
+        
+        png(save_name, width = 6, height = 3, units = "in", res = 300) # PNG file with 300 DPI
+        print(the_plot)
+        dev.off()  # Close the graphics device
+        return(invisible(NULL))
+    }
+    
+    clust_order <- unique(cluster_traj_dta[, c("cluster", "nGenes")])
+    clust_order <- clust_order$cluster[order(-clust_order$nGenes)]
+    num_needed_figures <- ceiling(length(clust_order)/8)
+    
+    for (idx in 1:num_needed_figures) {
+        max_clust = 8 * idx
+        if (idx == 1) {
+            min_clust <- 1
+        } else {
+            min_clust <- 8 * (idx - 1) + 1
+        }
+        clusters_to_plot <- clust_order[min_clust:max_clust]
+        clusters_to_plot <- clusters_to_plot[!is.na(clusters_to_plot)]
+        sub_ts_data <- cluster_traj_dta[cluster_traj_dta$cluster %in% 
+                                        clusters_to_plot, ]
+        sub_ts_data <- sub_ts_data[order(match(sub_ts_data$cluster, 
+                                               clusters_to_plot)), ]
+        sub_ts_means <- mean_cluster_traj_dta[mean_cluster_traj_dta$cluster %in% 
+                                              clusters_to_plot, ]
+        sub_ts_means <- sub_ts_means[order(match(sub_ts_means$cluster, 
+                                                 clusters_to_plot)), ]
+        
+        if (num_needed_figures > 1) {
+            save_name <- paste0(plot_name, "_", idx, "_of_", 
+                                num_needed_figures, ".png")
+        } else {
+            save_name <- paste0(plot_name, ".png")
+        }
+        
+        sub_ts_data$labels <- factor(sub_ts_data$labels, levels = unique(sub_ts_data$labels))
+        sub_ts_means$labels <- factor(sub_ts_means$labels, levels = unique(sub_ts_means$labels))
+        cluster_num <- length(clusters_to_plot)
+        number_rows <- ceiling(cluster_num/2)
+        
+        if (slot(object, "group_names")[1] == slot(object, "group_names")[2]) {
+            custom_height <- 1.5 * number_rows
+        } else {
+            custom_height <- 3 * number_rows
+        }
+        
+        if (cluster_num == 1) {
+            custom_width <- 6
+        } else {
+            custom_width <- 12
+        }
+        
+        if (log_TP == TRUE) {
+            sub_ts_data$log10_timepoint <- log10(sub_ts_data$timepoint)
+            sub_ts_data$log10_timepoint[sub_ts_data$log10_timepoint == "-Inf"] <- 0
+            sub_ts_means$log10_timepoint <- log10(sub_ts_means$timepoint)
+            sub_ts_means$log10_timepoint[sub_ts_means$log10_timepoint == "-Inf"] <- 0
+        }
+        
+        the_plot <- plot_cluster_traj(object, sub_ts_data, sub_ts_means, yaxis_name = yaxis_name)
+        
+        png(save_name, width = custom_width, height = custom_height, units = "in", res = 300) # PNG with 300 DPI
+        print(the_plot)
+        dev.off()  # Close the graphics device after each plot
+    }
+}
+
+load("gene_expression/data/Annotation/ACAL_annot_GO_KEGG.Rdata")
+
+run_gprofiler_PART_clusters <- function (object, transcript_version_adjust = NULL, gpro_sig = TRUE, 
+    vignette_run = FALSE) 
+{
+    if (length(slot(object, "Gprofiler_results")) > 0) {
+        message("Gprofiler results already exist")
+        return(object)
+    }
+    message("running Gprofiler on PART clusters")
+    cmap <- slot(object, "PART_results")$cluster_map 
+    for (clust in unique(cmap$cluster)) {
+        gene_vect <- cmap[cmap == clust, ] %>%
+          rownames_to_column("gene") %>%
+          inner_join(., AcTxAnot2, by = "gene") %>%
+          dplyr::select(cluster, cluster_col, Entry) %>%
+          unique() %>%
+          remove_rownames() %>%
+          column_to_rownames(.,var = "Entry")
+        gene_vect <- as.vector(row.names(gene_vect))
+        if (is.null(transcript_version_adjust) == FALSE) {
+            ENSG_genes <- gene_vect[startsWith(gene_vect, transcript_version_adjust)]
+            rem_decimal <- unlist(strsplit(ENSG_genes, "\\."))[c(T, 
+                F)]
+            gene_vect <- gene_vect[!gene_vect %in% ENSG_genes]
+            gene_vect <- c(gene_vect, rem_decimal)
+        }
+        if (vignette_run == TRUE) {
+            object <- part_gprofiler_vignettes(object)
+            return(object)
+        }
+        else {
+            message(paste0("Gprofiler for ", clust))
+            gostres <- gost(query = gene_vect, organism = slot(object, 
+                "Gpro_org"), significant = gpro_sig, user_threshold = 0.05)
+        }
+        if (is.null(gostres) == FALSE) {
+            object@Gprofiler_results[[clust]] <- gostres
+        }
+    }
+    return(object)
+}
+```
+
+# Check DE for Lab_Cross vs Wild_Cross Abdominal
+```{r pipeline for DE and clustering LCvsWC_abdominal}
+
+#Give names to saved object and name of results repository
+dir.create('merged_experiments/output/TS_output')
+dir.create('merged_experiments/output/TS_output/LCvsWC_Abdominal')
+name_result_folder<-'merged_experiments/output/TS_output/LCvsWC_Abdominal/'
+obj_name<-'timeSeries_obj_LCvsWC_abdominal.Rdata'
+
+graphic_vector<-c("#e31a1c","#1f78b4") #Pre-set colors for the groups
+names(graphic_vector)<-c('Lab_cross','Wild_cross')
+
+# Object creation -------------------
+A_TS_object <- new('TimeSeries_Object',
+                 group_names=c('Lab_cross','Wild_cross'),group_colors=graphic_vector,
+                 DE_method='DESeq2',DE_p_filter='padj',DE_p_thresh=0.05,
+                 DE_l2fc_thresh=1,PART_l2fc_thresh=2,sem_sim_org='org.Hs.eg.db',Gpro_org="hsapiens")
+
+A_TS_object <- add_experiment_data(A_TS_object,
+                                        sample_dta_path="merged_experiments/data/LCvsWC_A/sample_meta.csv",
+                                        count_dta_path="merged_experiments/data/LCvsWC_A/counts/")
+A_TS_object <- add_semantic_similarity_data(A_TS_object,"BP")
+
+# DESeq2 -------------------
+A_TS_object <- normalize_timeSeries_with_deseq2(time_object=A_TS_object)
+#Perform conditional differential gene expression analysis
+A_TS_object<-conditional_DE_wrapper(A_TS_object)
+#Perform temporal differential gene expression analysis
+A_TS_object<-temporal_DE_wrapper(A_TS_object,do_all_combinations=TRUE)
+
+# Subset temporal comparisons to only relevant ones
+temp_to_keep <- c("TP_1_vs_TP_0", "TP_6_vs_TP_0","TP_7_vs_TP_1")
+A_TS_object@DE_results$temporal <- A_TS_object@DE_results$temporal[temp_to_keep]
+
+# PART -------------------
+#Extract genes for PART clustering based on defined log(2)foldChange threshold
+signi_genes<-select_genes_with_l2fc(A_TS_object)
+
+sample_data<-exp_sample_data(A_TS_object)
+#Use all samples, but implement a custom order. In this case it is reversed
+samps_2<-sample_data$sample[sample_data$group==A_TS_object@group_names[2]]
+samps_1<-sample_data$sample[sample_data$group==A_TS_object@group_names[1]]
+
+#Create the matrix that will be used for PART clustering
+A_TS_object<-prep_counts_for_PART(object=A_TS_object,target_genes=signi_genes,
+                                scale=TRUE,target_samples=c(samps_2,samps_1))
+
+#Sets a seed for reproducibility
+set.seed('123456')
+
+
+A_TS_object<-compute_PART(A_TS_object,part_recursion=120,part_min_clust=50,
+                        custom_seed=123456,dist_param="euclidean", hclust_param="average")
+
+# Gprofiler -------------------
+A_TS_object<-run_gprofiler_PART_clusters(A_TS_object) #Run the gprofiler analysis with modified function to get human orthologs 
+
+# PCA -------------------
+TS_pca<-plot_PCA_TS(A_TS_object,DE_type='all')
+ggsave(paste0(name_result_folder,"PCA_plot.png"),dpi=300,width=21, height=19, units='cm',plot=TS_pca)
+
+# DESeq2 results -------------------
+#Set genes of interest (optional) - can be left as c()
+#genes_of_interest <- c('LOC101850742','LOC101857241','LOC101857709','LOC101851246','LOC101857475','LOC101849091')
+genes_of_interest <- inmune_ann %>%
+  tidyr::separate_rows(Gene_accessions, sep=",") %>%
+  dplyr::select(Gene_accessions)
+
+genes_of_interest <- as.vector(genes_of_interest$Gene_accessions)
+
+#Run wrappers twice once for conditional and another for temporal
+plot_wrapper_DE_results(object=A_TS_object,DE_type='conditional',genes_of_interest=genes_of_interest,results_folder=name_result_folder)
+plot_wrapper_DE_results(object=A_TS_object,DE_type='temporal',genes_of_interest=genes_of_interest,results_folder=name_result_folder)
+
+# PART results -------------------
+dir.create(paste0(name_result_folder,'PART_results')) #create the directory to store results
+PART_heat_map(A_TS_object,paste0(name_result_folder,'PART_results/PART_heat')) #Create a summary heatmap
+ts_data<-calculate_cluster_traj_data(A_TS_object,scale_feat=TRUE) #Calculate scaled gene values for genes of clusters
+mean_ts_data<-calculate_mean_cluster_traj(ts_data) #Calculate the mean scaled values for each cluster
+
+#Function which determines the number of SVG files to plot all cluster trajectories
+wrapper_cluster_trajectory(A_TS_object,ts_data,mean_ts_data,yaxis_name='scaled mean counts',log_TP=F,plot_name=paste0(name_result_folder,'/PART_results/Ctraj'))
+
+# Gprofiler results -------------------
+#Create standard gprofiler results
+
+gpro_res<-gprofiler_cluster_analysis(A_TS_object,'All',save_path = name_result_folder)
+GO_clusters<-gpro_res[['GO_df']]
+sem_dta<-slot(A_TS_object,'sem_list')
+found_clusters<-find_clusters_from_termdist(GO_clusters,sem_dta)
+
+#Plot and save MDS and clustered MDS
+MDS_plots<-wrapper_MDS_and_MDS_clusters(GO_clusters,sem_dta,'BP',target_dir=paste0(name_result_folder,'gprofiler_results/'),return_plot=TRUE)
+
+#Create dotplots
+GO_dotplot_wrapper(A_TS_object,file_loc=name_result_folder,target_ontology='GO:BP',top_n=10,custom_width=10)
+GO_dotplot_wrapper(A_TS_object,file_loc=name_result_folder,target_ontology='GO:MF',top_n=10,custom_width=10)
+GO_dotplot_wrapper(A_TS_object,file_loc=name_result_folder,target_ontology='GO:CC',top_n=10,custom_width=10)
+
+# Ancestor queries results -------------------
+ancestor_list <- c("GO:0001666","GO:0071456","GO:0002250","GO:0002376","GO:0002283","GO:0002252", "GO:0002684","GO:0008152","GO:0006950","GO:0030324","GO:0042990","GO:0006950","GO:0007610","GO:0008285","GO:0043522","GO:0010467","GO:0001501","GO:0006914","GO:0036294","GO:0071456","GO:0097411","GO:0035633","GO:0006979","GO:1900407","GO:0070994","GO:0006915","GO:0006954","GO:0019722","GO:0051924")
+GOs_ancestors_clust<-find_relation_to_ancestors(target_ancestors=ancestor_list,GOs_to_check=GO_clusters,ontology = 'BP')
+ancestor_plots<-wrapper_ancestor_curation_plots(GOs_ancestors_clust,sem_dta,return_plot=TRUE,target_dir=name_result_folder)
+
+save(A_TS_object,file=paste0(name_result_folder,obj_name))
+
+
+```
+
+```{r}
+
+#Plotting individual genes linked with HPC
+
+# Hypoxic response signaling
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101850742',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101850742", "HIF-1a (ortho1)"))
+p1<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p1
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101857241',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101857241", "HIF-1a (ortho2)"))
+p2<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p2
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101851246',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101851246", "HIF-1a-inhibitor"))
+p3<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p3 # HIF1A inhibitor
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101846128',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101846128", "HIF-1b"))
+p4<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p4 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101849111',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101849111", "NCX1"))
+p5<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p5 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101861500',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101861500", "NCX3"))
+p6<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p6 
+
+# Antioxidants
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101854685',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101854685", "CAT (ortho1)"))
+p7<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p7 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101860167',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101860167", "CAT (ortho2)"))
+p8<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p8 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101845824',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101845824", "GPx7"))
+p9<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p9 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101850882',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101850882", "GPx4"))
+p10<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p10 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC106012346',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC106012346", "GPx5"))
+p11<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p11 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101855028',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101855028", "TXN2"))
+p12<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p12 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC100533275',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC100533275", "SOD1"))
+p13<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p13 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101852344',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101852344", "MnSOD"))
+p14<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p14 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101847577',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101847577", "SOD (ortho2)"))
+p15<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p15 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101845921',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101845921", "SOD (ortho3)"))
+p16<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p16 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC106013208',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC106013208", "SOD (ortho4)"))
+p17<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p17 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101856740',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101856740", "HSP70 (ortho1)"))
+p18<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p18 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101850663',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101850663", "HSP70 (ortho2)"))
+p19<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p19 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC100533304',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC100533304", "MAPK14 (ortho1)"))
+p20<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p20
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101857669',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101857669", "MAPK14 (ortho2)"))
+p21<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p21
+
+# Inflamation
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101857902',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101857902", "TNF (ortho1)"))
+p22<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p22
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101854405',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101854405", "TNF (ortho2)"))
+p23<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p23
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101845807',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101845807", "TNF (ortho3)"))
+p24<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p24
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101861555',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101861555", "TNF (ortho4)"))
+p25<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p25
+
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101857902',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101857902", "TNF (ortho1)"))
+p26<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p26
+# Autophagy
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101858979',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101858979", "TBC1d15 (ortho1)"))
+p27<-plot_single_gene_traj(gene_traj,graphic_vector) + theme(legend.position = "none")
+p27
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101864240',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101864240", "TBC1d15 (ortho2)"))
+p28<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p28
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101864240", "TBC1d15 (ortho2)"))
+p29<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p29
+
+
+gene_traj<- calculate_gene_traj_data(A_TS_object,'LOC101849091',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101849091", "VEGF"))
+p30<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p30
+
+gene_traj<- calculate_gene_traj_data(A_TS_object,'LOC101861456',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101861456", "EPHB2"))
+p31<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p31
+
+ggsave(plot = ggarrange(p1,p2,p3,p4,p30,p19,p20,p21,p6,p7,p8,p10,p11,p13,p14,p16,p17,p22,p24,p25,p26,p28, ncol = 8, nrow = 3, common.legend = T),filename = paste0(name_result_folder,"Interesting_genes_expression.png"),width = 25,height=10)
+
+```
+
+
+```{r functional enrichment for conditional}
+library(clusterProfiler)
+library(ggplot2)
+library(enrichplot) 
+library(AnnotationHub)
+
+ah <- AnnotationHub()
+org.Acal.eg.db <- ah[["AH118618"]]
+
+```
+
+```{r FE for Abdominal}
+
+name_result_folder<-'merged_experiments/output/TS_output/LCvsWC_Abdominal/'
+
+#Check possible names in conditional and temporal
+names(A_TS_object@DE_results$conditional)
+names(A_TS_object@DE_results$temporal)
+
+#Select target DE results
+target_DE='conditional'
+target_name='Lab_cross_vs_Wild_cross_TP_7' #Change Time point and re-run
+
+#Extract gene list
+extracted_de <- A_TS_object@DE_results[[target_DE]][[target_name]]$DE_raw_data[,c('gene_id','log2FoldChange')] 
+gene_list<-extracted_de$log2FoldChange
+names(gene_list)=extracted_de$gene_id
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+
+#Check available keytypes
+keytypes(org.Hs.eg.db)
+
+
+#Run the GSEA. Important parameters are keyType, which is the keytype of
+#the gene_list. In this case, SYMBOL. OrgDb must also be specified. Other
+#parameters can be left as default or modified - more information is available
+#on the cluster profiler page
+gse <- gseGO(geneList=gene_list,
+             ont ="ALL",
+             keyType = "SYMBOL",
+             nPermSimple = 100000,
+             minGSSize = 3,
+             maxGSSize = 800,
+             pvalueCutoff = 0.05,
+             verbose = TRUE,
+             OrgDb = org.Acal.eg.db,
+             pAdjustMethod = "BH",
+             eps=0)
+#Add the semantic similarity
+gse<-pairwise_termsim(gse,semData=org.Acal.eg.db)
+
+require(DOSE)
+results_folder<-paste0(name_result_folder,'GSEA_results/',target_name,'/')
+dir.create(results_folder,recursive = T)
+
+
+#Below is a set of standard plots from clusterprofiler. These can be adjusted in many ways.
+#First, the width and height should be adjusted on a per plot basis, as the required
+#width and height will greatly vary depending on the results illustrated.
+
+#The showCategory parameter is to show the top n results based on adjusted pvalue.
+
+#You can also submit a vector of names to the showCategory parameter.
+#This is illustrated in the last bit of code on this page
+
+dotplot_name<-'default_dotplot.png'
+dotplot<-dotplot(gse, showCategory=10, split=".sign") + facet_grid(.~.sign)
+ggsave(plot = dotplot,filename = paste0(results_folder,dotplot_name),width = 9,height=10)
+
+emap_name<-'default_emap.png'
+emap<-emapplot(gse, showCategory = 10)
+ggsave(plot = emap,filename = paste0(results_folder,emap_name),width = 7,height=7)
+
+cnet_name<-'default_cnet.png'
+cnet<-cnetplot(gse, categorySize="pvalue", color.params=list(foldChange=gene_list), showCategory = 3)
+ggsave(plot = cnet,filename = paste0(results_folder,cnet_name),width = 10,height=10)
+
+ridge_name<-'default_ridge.png'
+ridge<-ridgeplot(gse) + labs(x = "enrichment distribution")
+ggsave(plot = ridge,filename = paste0(results_folder,ridge_name),width = 9,height=15)
+
+
+
+#Look at first 25 results
+gse@result$Description[1:25]
+#Creating a vector with three descriptions to illustrate use
+desc_vector<-c(gse@result$Description[1:25])
+#Create a cnet using desc_vector
+cnet<-cnetplot(gse, categorySize="pvalue", color.params=list(foldChange=gene_list), node_label="category",showCategory = desc_vector)
+cnet
+
+ggsave(plot = cnet,filename = paste0(results_folder,"category_network.png"),width = 10,height=10)
+```
+
+```{r}
+#Extract gene list
+extracted_de <- A_TS_object@DE_results[[target_DE]][[target_name]]$DE_raw_data[,c('gene_id','log2FoldChange')] 
+gene_list<-extracted_de$log2FoldChange
+names(gene_list)=extracted_de$gene_id
+# omit any NA values
+gene_list<-na.omit(gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+
+
+```
+
+
+

@@ -1,0 +1,5 @@
+"ancestor","term_id","term_name","p_value","term_size","group_name","-log10(padj)","group_color","ancestor_name"
+"GO:0006950","GO:0098542","defense response to other organism",0.0235646973874588,1220,"C9",0.423484511400367,"#1F78B4","response to stress"
+"GO:0006950","GO:0140546","defense response to symbiont",0.0275495776325138,1113,"C9",0.423484511400367,"#1F78B4","response to stress"
+"GO:0010467","GO:0032479","regulation of type I interferon production",0.00352303097687767,122,"C9",0.84029968147061,"#A6CEE3","gene expression"
+"GO:0010467","GO:0032606","type I interferon production",0.00352303097687767,122,"C9",0.84029968147061,"#A6CEE3","gene expression"

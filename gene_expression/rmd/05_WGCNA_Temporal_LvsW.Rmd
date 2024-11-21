@@ -1,0 +1,16 @@
+---
+title: "WGCNA_temporal_WvsL"
+author: "Javier Rodriguez Casariego"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Set the working directory to the R project's root folder
+setwd("/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+
+# Ensure the working directory is not reset for each chunk
+knitr::opts_knit$set(root.dir = "/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+knitr::opts_knit$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+

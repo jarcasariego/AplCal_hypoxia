@@ -1,0 +1,2 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0499316934433554,2,1,1,1,0.5,CORUM:6529,CORUM,FLRT3-LPHN3 complex,3383,2204,CORUM:0000000

@@ -1,8 +1,0 @@
-LOC100533276 5HT1A (Serotonin receptor 1A) dendrite
-LOC101853390 5HT1A (Serotonin receptor 1A) dendrite
-LOC101848898 5HT1A (Serotonin receptor 1A) dendrite
-LOC118477111 5HT1A (Serotonin receptor 1A) dendrite
-LOC101856656 5HT1B (Serotonin 1D beta receptor)
-LOC106011797 5HT1E (Serotonin receptor 1E) dendrite
-LOC101850821 5HT1A (Serotonin receptor 1A) dendrite
-LOC101851588 5HT1A (Serotonin receptor 1A) dendrite

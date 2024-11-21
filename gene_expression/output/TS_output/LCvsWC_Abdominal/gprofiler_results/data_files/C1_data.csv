@@ -1,0 +1,2 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.00684768843785165,21,5,2,0.4,0.0952380952380952,REAC:R-HSA-4641263,REAC,Regulation of FZD by ubiquitination,10842,1923,REAC:R-HSA-201681
