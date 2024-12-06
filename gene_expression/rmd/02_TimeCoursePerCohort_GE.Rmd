@@ -860,7 +860,7 @@ gene_traj<- calculate_gene_traj_data(A_TS_object,'LOC101861456',log_timepoint=FA
 p31<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
 p31
 
-ggsave(plot = ggarrange(p1,p2,p3,p4,p30,p19,p20,p21,p6,p7,p8,p10,p11,p13,p14,p16,p17,p22,p24,p25,p26,p28, ncol = 8, nrow = 3, common.legend = T),filename = paste0(name_result_folder,"Interesting_genes_expression.png"),width = 25,height=10)
+ggsave(plot = ggarrange(p1,p2,p3,p4,p30,p19,p20,p21,p6,p7,p8,p10,p11,p13,p14,p16,p17,p22,p24,p25,p26,p28, ncol = 5, nrow = 5, common.legend = T, legend = "bottom"),filename = paste0(name_result_folder,"Interesting_genes_expression.png"),width = 15,height=15)
 
 # Pleural
 name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Pleural/'

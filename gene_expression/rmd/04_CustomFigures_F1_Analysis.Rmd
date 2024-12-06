@@ -22,6 +22,10 @@ knitr::opts_chunk$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hy
 library(ggupset)
 library(ComplexHeatmap)
 library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+
 
 # load gene expression results for each timepoint for Lab_cross vs Wild_Cross
 load("gene_expression/output/TS_output/LCvsWC_Abdominal/timeSeries_obj_LCvsWC_abdominal.Rdata")
@@ -142,6 +146,36 @@ DE_lt_A_up <- list(Normoxia = as.character(Abdominal_Control_T0_DE$gene_id[Abdom
                 Reoxygenation = as.character(Abdominal_Reox_T3_DE$gene_id[Abdominal_Reox_T3_DE$dir == "UP"]),
                 Recovery = as.character(Abdominal_Recovery_T6_DE$gene_id[Abdominal_Recovery_T6_DE$dir == "UP"]))
 
+df2 <- data.frame(gene=unique(unlist(DE_lt_A)))
+df1 <- lapply(DE_lt_A,function(x){
+  data.frame(gene = x)
+}) %>% 
+  bind_rows(.id = "treat")
+df_int <- lapply(df2$gene,function(x){
+  # pull the name of the intersections
+  intersection <- df1 %>% 
+    dplyr::filter(gene==x) %>% 
+    arrange(treat) %>% 
+    pull("treat") %>% 
+    paste0(collapse = "|")
+  
+  # build the dataframe
+  data.frame(gene = x,int = intersection)
+}) %>% 
+  bind_rows()
+
+head(df_int,n=20)
+
+df_int %>% 
+  group_by(int) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n))
+
+df_int %>%
+  dplyr::filter(int == "Hypoxia_2h|Hypoxia_5d|Hypoxia_6d|Hypoxia_6h|Recovery|Reoxygenation") %>%
+  dplyr::select(gene) %>%
+  write.csv(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/genes_in_set.csv")
+
 
 #calculate the intersection between the differentially expressed gene sets
 set.seed(12345)
@@ -183,7 +217,8 @@ top_ha = HeatmapAnnotation(
 ht_A <- UpSet(m_list[[1]], top_annotation = top_ha, 
       right_annotation = upset_right_annotation(m_list[[1]], add_numbers = TRUE, show_annotation_name = F, axis = F),
       set_order = c("Normoxia","Hypoxia_2h","Hypoxia_6h","Hypoxia_5d",
-                   "Hypoxia_6d","Reoxygenation","Recovery"));ht_A
+                   "Hypoxia_6d","Reoxygenation","Recovery")) +
+  labs(title = "DEGs Wild_cross vs Lab_Cross (Abdominal)");ht_A
 
 # Plot upset for all shared DE and directionality
 
@@ -263,6 +298,441 @@ pdf(file="gene_expression/figures/Fig2B_UpsetPlotDEGs_Pleural.pdf", width = 8, h
 draw(ht_P)
 dev.off()
 ```
+
+## DE to hypoxia and recovery Lab-Wild overlap scatterplot
+
+```{r}
+
+load("gene_expression/data/Annotation/ACAL_annot_GO_KEGG.Rdata")
+AcTxAnot2 <- read.delim("gene_expression/data/Annotation/Acal_full_annot.txt")
+
+# prepare data
+# Abdominal 
+L_extracted_de <- read_csv("gene_expression/output/DE_lab/Abdominal/DE_raw_data.csv") 
+W_extracted_de <- read_csv("gene_expression/output/DE_Wild/Abdominal/DE_raw_data.csv") 
+
+hyp_DEGs_L <- L_extracted_de %>%
+  filter(contrast %in% c("Hyp_T2h.Control","Hyp_T6h.Control","LtH_6.Control","LtH_7.Control")) %>%
+  dplyr::group_by(gene) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    padj = min(padj, na.rm = T)) %>%
+  mutate(significance_Lab = ifelse(padj <= 0.05, TRUE,FALSE)) %>%
+  mutate(log2FC_Lab = log2FoldChange) %>%
+  dplyr::select(gene, log2FC_Lab,significance_Lab)
+
+hyp_DEGs_W <- W_extracted_de %>%
+  filter(contrast %in% c("Hyp_T2h.Control","Hyp_T6h.Control","LtH_6.Control","LtH_7.Control" )) %>%
+  dplyr::group_by(gene) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    padj = min(padj)) %>%
+  mutate(significance_Wild = ifelse(padj <= 0.05, TRUE,FALSE)) %>%
+  mutate(log2FC_Wild = log2FoldChange) %>%
+  dplyr::select(gene, log2FC_Wild,significance_Wild)
+
+df <- hyp_DEGs_L %>%
+  left_join(hyp_DEGs_W, by = "gene") %>%
+  mutate(Category = factor(ifelse(significance_Lab & significance_Wild, "Sig.Both",
+                 ifelse(significance_Lab, "Sig.Lab_Cross",
+                 ifelse(significance_Wild, "Sig.Wild_Cross", ""))), levels = c("Sig.Lab_Cross","Sig.Wild_Cross","Sig.Both"),
+                 ordered = T)) %>%
+  na.omit() %>%
+  left_join(AcTxAnot2[,c(7,15)], by = "gene") %>%
+  mutate(Gene_names = sub(" .*", "", Gene_names)) %>%
+  unique()
+  
+A_plot <- ggplot(df, aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  geom_label_repel(data = df %>% filter((log2FC_Lab > 1 & log2FC_Wild < -1)|(log2FC_Lab < -1 & log2FC_Wild > 1)), 
+                  aes(label = Gene_names, fill = Category, segment.color = "black"), color = "white", ,
+            size = 3, box.padding = 0.5, point.padding = unit(0.3, 
+                "lines"), max.overlaps = Inf) +
+  scale_color_manual(aesthetics = c("fill", "color"),
+                     values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(title = "Cross_HypoxiaDEGs (Abdominal)",
+    x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black") +
+  guides(fill = guide_legend(override.aes = aes(label = "")));A_plot
+
+
+
+L_extracted_de <- L_extracted_de %>%
+  na.omit() %>%
+  mutate(significance_Lab = ifelse(padj <= 0.05, TRUE,FALSE)) %>%
+  mutate(log2FC_Lab = log2FoldChange) %>%
+  dplyr::select(gene, log2FC_Lab,significance_Lab, contrast)
+
+W_extracted_de <- W_extracted_de %>%
+  na.omit() %>%
+  mutate(significance_Wild = ifelse(padj <= 0.05, TRUE,FALSE)) %>%
+  mutate(log2FC_Wild = log2FoldChange) %>%
+  dplyr::select(gene, log2FC_Wild,significance_Wild, contrast)
+
+df <- L_extracted_de %>%
+  inner_join(W_extracted_de, by = c("contrast","gene")) %>%
+  dplyr::group_by(contrast) %>%
+  nest() 
+  
+# Define gene categories
+df <- df %>%
+    mutate(
+    data = map(data, ~ .x %>%
+                 mutate(Category = factor(ifelse(significance_Lab & significance_Wild, "Sig.Both",
+                 ifelse(significance_Lab, "Sig.Lab_Cross",
+                 ifelse(significance_Wild, "Sig.Wild_Cross", ""))), levels = c("Sig.Lab_Cross","Sig.Wild_Cross","Sig.Both"),
+                 ordered = T))
+    )
+    )
+
+# Plot for Hyp_2h
+A_2h <- ggplot(df[[2]][[1]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");A_2h
+
+# Plot for Hyp_6h
+A_6h <- ggplot(df[[2]][[2]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");A_6h
+
+# Plot for Hyp_5d
+A_5d <- ggplot(df[[2]][[3]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");A_5d
+
+# Plot for Hyp_6d
+A_6d <- ggplot(df[[2]][[4]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");A_6d
+
+# Plot for Recovery
+A_Reco <- ggplot(df[[2]][[5]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");A_Reco
+
+# Plot for Reox
+A_Reox <- ggplot(df[[2]][[8]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");A_Reox
+
+# Pleural
+L_extracted_de <- read_csv("gene_expression/output/DE_lab/Pleural/DE_raw_data.csv") 
+W_extracted_de <- read_csv("gene_expression/output/DE_Wild/Pleural/DE_raw_data.csv") 
+
+hyp_DEGs_L <- L_extracted_de %>%
+  filter(contrast %in% c("Hyp_T2h.Control","Hyp_T6h.Control","LtH_6.Control","LtH_7.Control")) %>%
+  dplyr::group_by(gene) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    padj = min(padj, na.rm = T)) %>%
+  mutate(significance_Lab = ifelse(padj <= 0.05, TRUE,FALSE)) %>%
+  mutate(log2FC_Lab = log2FoldChange) %>%
+  dplyr::select(gene, log2FC_Lab,significance_Lab)
+
+hyp_DEGs_W <- W_extracted_de %>%
+  filter(contrast %in% c("Hyp_T2h.Control","Hyp_T6h.Control","LtH_6.Control","LtH_7.Control" )) %>%
+  dplyr::group_by(gene) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE),
+    padj = min(padj)) %>%
+  mutate(significance_Wild = ifelse(padj <= 0.05, TRUE,FALSE)) %>%
+  mutate(log2FC_Wild = log2FoldChange) %>%
+  dplyr::select(gene, log2FC_Wild,significance_Wild)
+
+df <- hyp_DEGs_L %>%
+  left_join(hyp_DEGs_W, by = "gene") %>%
+  mutate(Category = factor(ifelse(significance_Lab & significance_Wild, "Sig.Both",
+                 ifelse(significance_Lab, "Sig.Lab_Cross",
+                 ifelse(significance_Wild, "Sig.Wild_Cross", ""))), levels = c("Sig.Lab_Cross","Sig.Wild_Cross","Sig.Both"),
+                 ordered = T)) %>%
+  na.omit() %>%
+  left_join(AcTxAnot2[,c(7,15)], by = "gene") %>%
+  mutate(Gene_names = sub(" .*", "", Gene_names))  %>%
+  unique()
+  
+P_plot <- ggplot(df, aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  geom_label_repel(data = df %>% filter((log2FC_Lab > .7 & log2FC_Wild < -.7)|(log2FC_Lab < -.7 & log2FC_Wild > .7)), 
+                  aes(label = Gene_names, fill = Category, segment.color = "black"), color = "white", ,
+            size = 3, box.padding = 0.5, point.padding = unit(0.3, 
+                "lines"), max.overlaps = Inf) +
+  scale_color_manual(aesthetics = c("fill", "color"),
+                     values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(title = "Cross_HypoxiaDEGs (Pleural)",
+    x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black") +
+  guides(fill = guide_legend(override.aes = aes(label = "")));P_plot
+
+
+L_extracted_de <- L_extracted_de %>%
+  na.omit() %>%
+  mutate(significance_Lab = ifelse(padj <= 0.05, TRUE,FALSE)) %>%
+  mutate(log2FC_Lab = log2FoldChange) %>%
+  dplyr::select(gene, log2FC_Lab,significance_Lab, contrast)
+
+W_extracted_de <- W_extracted_de %>%
+  na.omit() %>%
+  mutate(significance_Wild = ifelse(padj <= 0.05, TRUE,FALSE)) %>%
+  mutate(log2FC_Wild = log2FoldChange) %>%
+  dplyr::select(gene, log2FC_Wild,significance_Wild, contrast)
+
+df <- L_extracted_de %>%
+  inner_join(W_extracted_de, by = c("contrast","gene")) %>%
+  dplyr::group_by(contrast) %>%
+  nest() 
+  
+# Define gene categories
+df <- df %>%
+    mutate(
+    data = map(data, ~ .x %>%
+                 mutate(Category = factor(ifelse(significance_Lab & significance_Wild, "Sig.Both",
+                 ifelse(significance_Lab, "Sig.Lab_Cross",
+                 ifelse(significance_Wild, "Sig.Wild_Cross", ""))), levels = c("Sig.Lab_Cross","Sig.Wild_Cross","Sig.Both"),
+                 ordered = T))
+    )
+    )
+
+# Plot for Hyp_2h
+p_2h <- ggplot(df[[2]][[1]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");p_2h
+
+# Plot for Hyp_6h
+p_6h <- ggplot(df[[2]][[2]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");p_6h
+
+# Plot for Hyp_5d
+p_5d <- ggplot(df[[2]][[3]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");p_5d
+
+# Plot for Hyp_6d
+p_6d <- ggplot(df[[2]][[4]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");p_6d
+
+# Plot for Recovery
+p_Reco <- ggplot(df[[2]][[5]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");p_Reco
+
+# Plot for Reox
+p_Reox <- ggplot(df[[2]][[8]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
+  geom_point(alpha = 0.7, size = 1.5, shape = 1) +
+  scale_color_manual(values = c("Sig.Both" = "grey", 
+                                "Sig.Lab_Cross" = "darkred", 
+                                "Sig.Wild_Cross" = "blue"),
+                                na.value = NA) +
+  labs(x = "log[2]FC - Wild_Cross",
+    y = "log[2]FC - Lab_Cross",
+    color = NULL
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "solid", color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black");p_Reox
+
+
+ggsave(filename = "gene_expression/figures/Fig_Cross_Hyp_DEGs.pdf", ggarrange(A_plot, P_plot, nrow = 1, common.legend = T, legend = "right"), height = 5, width = 13)
+```
+
+
 # Functional Enrichment Combined Figures 
 ## GO:BP Abdominal
 ```{r fig.height=23, fig.width= 15}
@@ -432,7 +902,7 @@ plt<-plt+
 # Color by ancestor
 plt
 
-ggsave(filename = "gene_expression/figures/FigSn_GOenrichment_Abdominal.png", plt, width = 15, height = 23)
+ggsave(filename = "gene_expression/figures/FigSn_GOenrichment_Abdominal.pdf", plt, width = 15, height = 23)
 
 #Plot By Reduced terms 
 
@@ -481,15 +951,18 @@ plt1<-plt1+
 # Upregulated (Higher expression in Lab_cross)
 # Downregulated (Lower expression in Lab_cross)
 
+
 plt1
 
-ggsave(filename = "gene_expression/figures/FigSn_Reduced_GOBP_Abdominal.png", plt1, width = 15, height = 14)
-
-
+#pdf.options(encoding=)
+#ggsave(filename = "gene_expression/figures/FigSn_Reduced_GOBP_Abdominal.pdf", plt1, width = 15, height = 14)
+cairo_pdf("gene_expression/figures/FigSn_Reduced_GOBP_Abdominal.pdf", width = 15, height = 10)
+plt1
+dev.off()
 ```
 
 ## KEGG abdominal
-```{r fig.height=23, fig.width= 15}
+```{r fig.height=8, fig.width= 12}
 KEGG_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseKEGG_results.tab")
 KEGG_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseKEGG_results.tab")
 KEGG_res_T2 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_2/ gseKEGG_results.tab")
@@ -515,13 +988,13 @@ df_T5 <- left_join(KEGG_res_T5, gene_count.KEGG_T5, by = "ID") %>% mutate(GeneRa
 df_T6 <- left_join(KEGG_res_T6, gene_count.KEGG_T6, by = "ID") %>% mutate(GeneRatio = count/setSize)
 
 
-merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
-                                              Hyp_2h=df_T1,
-                                              Hyp_6h=df_T2,
-                                              Hyp_5d=df_T4,
-                                              Hyp_6d=df_T5,
-                                              Reox=df_T3,
-                                              Reco=df_T6)))
+merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0[1:10,],
+                                              Hyp_2h=df_T1[1:10,],
+                                              Hyp_6h=df_T2[1:10,],
+                                              Hyp_5d=df_T4[1:10,],
+                                              Hyp_6d=df_T5[1:10,],
+                                              Reox=df_T3[1:10,],
+                                              Reco=df_T6[1:10,])))
 
 
 
@@ -560,12 +1033,14 @@ plt<-plt+
 # Downregulated (Lower expression in Lab_cross)
 
 plt
+ggsave(filename = "gene_expression/figures/FigSn_KEGGenrichment_Abdominal.png", plt, width = 12, height = 8)
 
-ggsave(filename = "gene_expression/figures/FigSn_KEGGenrichment_Abdominal.png", plt, width = 15, height = 23)
+
+
 ```
 
 ## MKEGG abdominal
-```{r fig.width=13, fig.height=6}
+```{r fig.width=12, fig.height=5}
 
 MKEGG_res_T0 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_0/ gseMKEGG_results.tab")
 MKEGG_res_T1 <- read_delim(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/GSEA_results/Lab_cross_vs_Wild_cross_TP_1/ gseMKEGG_results.tab")
@@ -635,7 +1110,7 @@ plt<-plt+
 # Downregulated (Lower expression in Lab_cross)
 
 plt
-ggsave(filename = "gene_expression/figures/FigSn_MKEGGenrichment_Abdominal.png", plt, width = 13, height = 6)
+ggsave(filename = "gene_expression/figures/FigSn_MKEGGenrichment_Abdominal.png", plt, width = 12, height = 5)
 ```
 
 ##WIKIPathway abdominal
@@ -711,6 +1186,112 @@ plt<-plt+
 plt
 ggsave(filename = "gene_expression/figures/FigSn_WP_enrichment_Abdominal.png", plt, width = 13, height = 23)
 ```
+
+#KEGG pathway logChange timeline plot.
+
+```{r}
+# Build a matrix of log2fold per gene across all timepoints
+
+Abdominal_Control_T0_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_0"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  mutate(Control = log2FoldChange) %>%
+  dplyr::select(gene_id, Control)
+  
+Abdominal_Hyp_2h_T1_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_1"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  mutate(Hyp_2h = log2FoldChange) %>%
+  dplyr::select(gene_id, Hyp_2h)
+
+Abdominal_Hyp_6h_T2_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_2"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  mutate(Hyp_6h = log2FoldChange) %>%
+  dplyr::select(gene_id, Hyp_6h)
+
+Abdominal_Reox_T3_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_3"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  mutate(Reox = log2FoldChange) %>%
+  dplyr::select(gene_id, Reox)
+
+Abdominal_Hyp_5d_T4_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_4"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  mutate(Hyp_5d = log2FoldChange) %>%
+  dplyr::select(gene_id, Hyp_5d)
+
+Abdominal_Hyp_6d_T5_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_5"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  mutate(Hyp_6d = log2FoldChange) %>%
+  dplyr::select(gene_id, Hyp_6d)
+
+Abdominal_Recovery_T6_DE <- A_TS_object@DE_results[["conditional"]][["Lab_cross_vs_Wild_cross_TP_6"]]$DE_raw_data[,c('gene_id','log2FoldChange','padj')] %>%
+  mutate(Recovery = log2FoldChange) %>%
+  dplyr::select(gene_id, Recovery)
+
+df <- Abdominal_Control_T0_DE %>%
+  left_join(Abdominal_Hyp_2h_T1_DE, by = "gene_id") %>%
+  left_join(Abdominal_Hyp_6h_T2_DE, by = "gene_id") %>%
+  left_join(Abdominal_Reox_T3_DE, by = "gene_id") %>%
+  left_join(Abdominal_Hyp_5d_T4_DE, by = "gene_id") %>%
+  left_join(Abdominal_Hyp_6d_T5_DE, by = "gene_id") %>%
+  left_join(Abdominal_Recovery_T6_DE, by = "gene_id") %>%
+  dplyr::inner_join(., AcTxAnot2 %>%
+                      dplyr::select(gene, Entry, GeneID), by = c("gene_id"="gene")) %>%
+  mutate(GeneID = gsub(",","", GeneID)) %>%
+  unique()
+# Convert to gene identifiers ENTREZIDs to be able to use for pathview
+
+df$entrez <- mapIds(org.Hs.eg.db,
+                     keys=df$Entry,
+                     column="ENTREZID",
+                     keytype="UNIPROT",
+                     multiVals="first")
+
+df <- df %>%
+  group_by(Entry) %>%
+  reframe(
+    Control = mean(Control, na.rm = TRUE),
+    Hyp_T2h = mean(Hyp_2h, na.rm = TRUE),
+    Hyp_T6h = mean(Hyp_6h, na.rm = TRUE),
+    Reox = mean(Reox, na.rm = TRUE),
+    Hyp_T5d = mean(Hyp_5d, na.rm = TRUE),
+    Hyp_T6d = mean(Hyp_6d, na.rm = TRUE),
+    Recovery = mean(Recovery, na.rm = TRUE),
+    GeneID = GeneID,
+    entrez = entrez
+  ) %>%
+  unique() %>%
+  mutate(entrez2 = coalesce(entrez, GeneID)) %>%
+  distinct_at("entrez2", .keep_all = TRUE)
+  
+
+##Interest Pathways
+pathways <- c(#"hsa01200",	#Carbon metabolism
+              "hsa00190",	#Oxidative phosphorylation
+              "hsa04714",	#Thermogenesis
+              "hsa04210",	#Apoptosis
+              "hsa04630"	#JAK-STAT signaling pathway
+              
+)
+
+
+p_results_folder <- paste0("gene_expression/figures/", "A_KEGGpathways")
+dir.create(p_results_folder,recursive = T)
+
+setwd("gene_expression/figures/A_KEGGpathways")
+pv.out <- pathview(
+  gene.data = df %>%
+    dplyr::select(Control,Hyp_T2h,Hyp_T6h,Reox,Hyp_T6d,Hyp_T6d,Recovery,entrez2) %>%
+    column_to_rownames("entrez2"),
+  pathway.id = pathways,
+  species = "hsa",
+  keys.align = "y",
+  kegg.native = T,
+  match.data = F,
+  multi.state = T,
+  same.layer = T,
+  high = "firebrick1",
+  mid = "grey75",
+  low = "dodgerblue",
+  expand.node = TRUE,
+  map.symbol = FALSE
+)
+
+```
+
+
 ## GO:BP PleuralPedal
 
 ```{r fig.width=15, fig.height=30}

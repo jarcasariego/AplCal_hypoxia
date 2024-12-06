@@ -16,6 +16,7 @@
 *fastq.gz
 *.cov.gz
 *.tsv.gz
+*.R
 
 # Output files from R CMD check
 /*.Rcheck/

@@ -1,0 +1,5 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.000653957783001843,4,19,2,0.105263157894737,0.5,GO:0090733,GO:CC,tenascin complex,22097,2887,GO:0062023/GO:0098637
+2,query_1,TRUE,0.0147245278542724,17,19,2,0.105263157894737,0.117647058823529,GO:0098637,GO:CC,protein complex involved in cell-matrix adhesion,22097,3225,GO:0098636
+3,query_1,TRUE,0.0307029746326381,4213,19,11,0.578947368421053,0.00261096605744125,GO:0005576,GO:CC,extracellular region,22097,198,GO:0110165
+4,query_1,TRUE,0.037581922662973,138,11,3,0.272727272727273,0.0217391304347826,HPA:0481323,HPA,small intestine; enterocytes - Microvilli[High],11019,737,HPA:0481322

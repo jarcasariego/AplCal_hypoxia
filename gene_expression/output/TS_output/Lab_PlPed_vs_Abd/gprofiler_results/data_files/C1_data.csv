@@ -1,0 +1,5 @@
+,query,significant,p_value,term_size,query_size,intersection_size,precision,recall,term_id,source,term_name,effective_domain_size,source_order,parents
+1,query_1,TRUE,0.0496799370058398,1,4,1,0.25,1,CORUM:1977,CORUM,MTNR1B homodimer complex,3383,866,CORUM:0000000
+2,query_1,TRUE,0.00980391220772672,1110,27,9,0.333333333333333,0.00810810810810811,GO:0051241,GO:BP,negative regulation of multicellular organismal process,21031,14039,GO:0032501/GO:0048519/GO:0051239
+3,query_1,TRUE,0.0122823256338718,555,28,6,0.214285714285714,0.0108108108108108,GO:0031012,GO:CC,extracellular matrix,22097,1028,GO:0030312
+4,query_1,TRUE,0.0124055950305233,556,28,6,0.214285714285714,0.0107913669064748,GO:0030312,GO:CC,external encapsulating structure,22097,927,GO:0071944/GO:0110165

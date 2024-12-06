@@ -1,0 +1,1863 @@
+---
+title: "DE analysis of wild cohort under hypoxia"
+author: "Javier Rodriguez Casariego"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+# Set the working directory to the R project's root folder
+setwd("/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+
+# Ensure the working directory is not reset for each chunk
+knitr::opts_knit$set(root.dir = "/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+knitr::opts_knit$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+
+
+```{r load_libraries, include = TRUE}
+library(knitr)
+library(TimeSeriesAnalysis)
+library(SummarizedExperiment)
+library(ggplot2)
+library(svglite)
+library(tidyverse)
+library(Cairo)
+library(gprofiler2)
+library(stringr)
+library(DESeq2)    # BiocManager::install('DESeq2')
+library(limma)     # BiocManager::install('limma')
+library(ggpubr)
+library(cowplot)
+library(org.Hs.eg.db)
+library(DEGreport) #BiocManager::install("DEGreport")
+library(glmpca)
+library(PoiClaClu)
+library(RColorBrewer)
+library(pheatmap)
+
+#library(stringr)
+#library(readxl)
+#library(variancePartition)  # BiocManager::install('variancePartition')
+#library(doParallel)
+#library(ggfortify) # install.packages("ggfortify")
+#library(Biobase)
+#library(arrayQualityMetrics)
+library(ggvenn) # install.packages("ggvenn")
+#if (!require(devtools)) install.packages("devtools")
+#devtools::install_github("gaospecial/ggVennDiagram")
+#library(ggVennDiagram)
+
+## ggplot theme
+theme_custom <- function() {
+  theme_bw(base_size = 10) %+replace%    #, base_family = "Arial"
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(), 
+      panel.background = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA),
+      legend.background = element_rect(fill = NA, colour = NA),
+      axis.text.x = element_text(angle=45, hjust=1, vjust = 1)
+    )
+}
+## ggplot labeller
+colnames <- c(
+  `A` = "abdominal",
+  `Pp` = "pleural & pedal"
+)
+
+global_labeller <- labeller(
+  tissue = colnames,
+  .default = "label_parsed"
+)
+
+```
+
+<!-- Define functions to get maximal log 2 fold change from expression matrix -->
+```{r, echo=FALSE, message=FALSE, warning = FALSE}
+maxL2FC <- function(x, log2 = FALSE){
+  #' Get maximal log2 Fold Change of input vector
+  #'
+  #' Takes a vector and calculates the maximal log2 fold change of a sequence of values.
+  #' If only 2 values are provided, collapses to normal log2 fold change calculation.
+  #'
+  #' @param x numeric. A vector that is assumed to be in order. Must have at least 2 components.
+  #' @param log2 boolean. Specify if input values need to be log transformed, TRUE if yes. Default FALSE.
+  #' @return numeric. The maximal log2 fold change of the input vector. 
+  
+  #check user input
+  if(!is.numeric(x)){
+    stop("Input is not of type numeric")
+  }
+  if(length(x) < 2){
+    stop("Input must have at least 2 values")
+  }
+    #rising trend
+    if( match(max(x), x) > match(min(x), x) ){
+      a = min(x)
+      b = max(x)
+    }
+    #falling trend
+    else if ( match(min(x), x) > match(max(x), x) ){
+      a = max(x)
+      b = min(x)
+    }
+    #log2(value +1) transform to get log fold change
+    if(log2 == TRUE){
+      log(b+1,2) - log(a+1,2)
+    }
+    else{
+      b-a
+    }
+
+}
+
+
+getMaxL2FC <- function(em, byRow = TRUE, log2 = FALSE){
+  #' Get maximal log2 Fold Change of input expression matrix
+  #'
+  #' Takes an expression matrix and calculates the maximal log2 fold change per gene.
+  #'
+  #' @param em numeric. An expression matrix.
+  #' @param byRow boolean. If TRUE, matrixs is gene by sample, ie rows represent genes. FALSE will evaluate by column.
+  #' @param log2 boolean. Specify if input values need to be log transformed, TRUE if yes. Default FALSE.
+  #' @return numeric. A vector containing the maximal log2 fold change of an input matrix. 
+  
+  if(! (is.matrix(em) | is.data.frame(em) ) ){
+    stop("Input must be an expression matrix.")
+  }
+  em <- as.matrix(em)
+  
+  if(byRow == TRUE){
+    m = 1L
+  }
+  else{
+    m = 2L
+  }
+  apply(em, MARGIN = m, FUN = maxL2FC)
+  
+}
+
+```
+<!-- Modify GO profiler function to fit Aplysia dataset -->
+```{r include=FALSE}
+load("gene_expression/data/Annotation/ACAL_annot_GO_KEGG.Rdata")
+AcTxAnot2 <- read.delim("gene_expression/data/Annotation/Acal_full_annot.txt")
+
+run_gprofiler_PART_clusters <- function (object, transcript_version_adjust = NULL, gpro_sig = TRUE, 
+    vignette_run = FALSE) 
+{
+    if (length(slot(object, "Gprofiler_results")) > 0) {
+        message("Gprofiler results already exist")
+        return(object)
+    }
+    message("running Gprofiler on PART clusters")
+    cmap <- slot(object, "PART_results")$cluster_map 
+    for (clust in unique(cmap$cluster)) {
+        gene_vect <- cmap[cmap == clust, ] %>%
+          rownames_to_column("gene") %>%
+          inner_join(., AcTxAnot2, by = "gene") %>%
+          dplyr::select(cluster, cluster_col, Entry) %>%
+          unique() %>%
+          remove_rownames() %>%
+          column_to_rownames(.,var = "Entry")
+        gene_vect <- as.vector(row.names(gene_vect))
+        if (is.null(transcript_version_adjust) == FALSE) {
+            ENSG_genes <- gene_vect[startsWith(gene_vect, transcript_version_adjust)]
+            rem_decimal <- unlist(strsplit(ENSG_genes, "\\."))[c(T, 
+                F)]
+            gene_vect <- gene_vect[!gene_vect %in% ENSG_genes]
+            gene_vect <- c(gene_vect, rem_decimal)
+        }
+        if (vignette_run == TRUE) {
+            object <- part_gprofiler_vignettes(object)
+            return(object)
+        }
+        else {
+            message(paste0("Gprofiler for ", clust))
+            gostres <- gost(query = gene_vect, organism = slot(object, 
+                "Gpro_org"), significant = gpro_sig, user_threshold = 0.05)
+        }
+        if (is.null(gostres) == FALSE) {
+            object@Gprofiler_results[[clust]] <- gostres
+        }
+    }
+    return(object)
+}
+```
+<!-- modify heatmap function to fix issue with Cairo -->
+```{r eval=FALSE, include=FALSE}
+## I solved the issue with Cairo in my system but this can be useful for others
+library(ComplexHeatmap)
+PART_heat_map <- function (object, heat_name = "custom_heat_map") 
+{
+    PART_res <- slot(object, "PART_results")
+    row_annot <- rowAnnotation(gene_cluster = PART_res$part_data$gene_cluster, 
+        col = list(gene_cluster = PART_res$cluster_info[["colored_clust_rows"]]), 
+        show_annotation_name = FALSE, annotation_legend_param = list(title = "clusters", 
+            at = unique(PART_res$part_data$gene_cluster), labels = unique(PART_res$cluster_map$cluster)))
+    top_annot_results <- prepare_top_annotation_PART_heat(object)
+    top_annot_labels <- top_annot_results[[1]]
+    top_annot_no_labels <- top_annot_results[[2]]
+    col_split <- top_annot_results[[3]]
+    col_split_vect <- levels(col_split)
+    gap_vect <- c()
+    for (idx in 1:length(col_split_vect)) {
+        if (idx != length(col_split_vect)) {
+            val1 <- unlist(strsplit(as.character(col_split_vect[idx]), 
+                "_"))[1]
+            val2 <- unlist(strsplit(as.character(col_split_vect[idx + 
+                1]), "_"))[1]
+            if (val1 != val2) {
+                gap_vect <- c(gap_vect, 4)
+            }
+            else {
+                gap_vect <- c(gap_vect, 0.5)
+            }
+        }
+    }
+    if (slot(object, "group_names")[1] == slot(object, "group_names")[2]) {
+        group_cols <- slot(object, "group_colors")[1]
+    }
+    else {
+        group_cols <- slot(object, "group_colors")
+    }
+    lgd = Legend(labels = names(group_cols), title = "groups", 
+        legend_gp = gpar(fill = unname(group_cols)))
+    sorted_matrix <- as.matrix(PART_res$part_data[, 3:ncol(PART_res$part_data)])
+    if (is.null(heat_name) == TRUE) {
+        pdf(NULL)
+        PART_plot <- draw(Heatmap(sorted_matrix, name = "Z-score", 
+            cluster_columns = FALSE, cluster_rows = FALSE, show_column_dend = TRUE, 
+            show_row_dend = FALSE, row_names_gp = gpar(fontsize = 8), 
+            left_annotation = row_annot, row_order = row.names(PART_res$part_data), 
+            show_row_names = FALSE, top_annotation = top_annot_no_labels, 
+            column_split = col_split, cluster_column_slices = TRUE, 
+            column_gap = unit(gap_vect, "mm"), show_column_names = FALSE, 
+            border = FALSE, column_title = NULL), annotation_legend_list = lgd)
+        dev.off()
+        return(PART_plot)
+    }
+    else {
+        PART_save_data <- paste0(heat_name, "_data.csv")
+        PART_save_cmap <- paste0(heat_name, "_cmap.csv")
+        write.csv(PART_res$part_matrix, PART_save_data)
+        write.csv(PART_res$cluster_map, PART_save_cmap)
+    }
+    png(paste0(heat_name, "_with_names.png"), height = 30, width = 20)
+    draw(Heatmap(sorted_matrix, name = "Z-score", cluster_columns = FALSE, 
+        cluster_rows = FALSE, show_column_dend = TRUE, show_row_dend = FALSE, 
+        row_names_gp = gpar(fontsize = 8), left_annotation = row_annot, 
+        row_order = row.names(PART_res$part_data), show_row_names = TRUE, 
+        top_annotation = top_annot_labels, column_split = col_split, 
+        cluster_column_slices = TRUE, column_gap = unit(gap_vect, 
+            "mm"), show_column_names = FALSE, border = FALSE, 
+        column_title = NULL), annotation_legend_list = lgd)
+    trash <- capture.output(dev.off())
+    png(paste0(heat_name, ".png"))
+    draw(Heatmap(sorted_matrix, name = "Z-score", cluster_columns = FALSE, 
+        cluster_rows = FALSE, show_column_dend = TRUE, show_row_dend = FALSE, 
+        row_names_gp = gpar(fontsize = 8), left_annotation = row_annot, 
+        row_order = row.names(PART_res$part_data), show_row_names = FALSE, 
+        top_annotation = top_annot_no_labels, column_split = col_split, 
+        cluster_column_slices = TRUE, column_gap = unit(gap_vect, 
+            "mm"), show_column_names = FALSE, border = FALSE, 
+        column_title = NULL), annotation_legend_list = lgd)
+    trash <- capture.output(dev.off())
+}
+
+wrapper_cluster_trajectory <- function(object, cluster_traj_dta, mean_cluster_traj_dta, yaxis_name, 
+                                       log_TP = FALSE, plot_name = "Ctraj") {
+    
+    if (length(unique(cluster_traj_dta$timepoint)) == 1) {
+        save_name <- paste0(plot_name, ".png")
+        the_plot <- plot_cluster_traj(object, cluster_traj_dta, 
+                                      mean_cluster_traj_dta, yaxis_name = yaxis_name)
+        
+        png(save_name, width = 6, height = 3, units = "in", res = 300) # PNG file with 300 DPI
+        print(the_plot)
+        dev.off()  # Close the graphics device
+        return(invisible(NULL))
+    }
+    
+    clust_order <- unique(cluster_traj_dta[, c("cluster", "nGenes")])
+    clust_order <- clust_order$cluster[order(-clust_order$nGenes)]
+    num_needed_figures <- ceiling(length(clust_order)/8)
+    
+    for (idx in 1:num_needed_figures) {
+        max_clust = 8 * idx
+        if (idx == 1) {
+            min_clust <- 1
+        } else {
+            min_clust <- 8 * (idx - 1) + 1
+        }
+        clusters_to_plot <- clust_order[min_clust:max_clust]
+        clusters_to_plot <- clusters_to_plot[!is.na(clusters_to_plot)]
+        sub_ts_data <- cluster_traj_dta[cluster_traj_dta$cluster %in% 
+                                        clusters_to_plot, ]
+        sub_ts_data <- sub_ts_data[order(match(sub_ts_data$cluster, 
+                                               clusters_to_plot)), ]
+        sub_ts_means <- mean_cluster_traj_dta[mean_cluster_traj_dta$cluster %in% 
+                                              clusters_to_plot, ]
+        sub_ts_means <- sub_ts_means[order(match(sub_ts_means$cluster, 
+                                                 clusters_to_plot)), ]
+        
+        if (num_needed_figures > 1) {
+            save_name <- paste0(plot_name, "_", idx, "_of_", 
+                                num_needed_figures, ".png")
+        } else {
+            save_name <- paste0(plot_name, ".png")
+        }
+        
+        sub_ts_data$labels <- factor(sub_ts_data$labels, levels = unique(sub_ts_data$labels))
+        sub_ts_means$labels <- factor(sub_ts_means$labels, levels = unique(sub_ts_means$labels))
+        cluster_num <- length(clusters_to_plot)
+        number_rows <- ceiling(cluster_num/2)
+        
+        if (slot(object, "group_names")[1] == slot(object, "group_names")[2]) {
+            custom_height <- 1.5 * number_rows
+        } else {
+            custom_height <- 3 * number_rows
+        }
+        
+        if (cluster_num == 1) {
+            custom_width <- 6
+        } else {
+            custom_width <- 12
+        }
+        
+        if (log_TP == TRUE) {
+            sub_ts_data$log10_timepoint <- log10(sub_ts_data$timepoint)
+            sub_ts_data$log10_timepoint[sub_ts_data$log10_timepoint == "-Inf"] <- 0
+            sub_ts_means$log10_timepoint <- log10(sub_ts_means$timepoint)
+            sub_ts_means$log10_timepoint[sub_ts_means$log10_timepoint == "-Inf"] <- 0
+        }
+        
+        the_plot <- plot_cluster_traj(object, sub_ts_data, sub_ts_means, yaxis_name = yaxis_name)
+        
+        png(save_name, width = custom_width, height = custom_height, units = "in", res = 300) # PNG with 300 DPI
+        print(the_plot)
+        dev.off()  # Close the graphics device after each plot
+    }
+}
+```
+<!-- function to plot volcanos -->
+```{r volcano function}
+volcanoplot_alt <- function(DE_res,genes_of_interest=c(),filter_choice='padj',l2FC_thresh=0,
+                            p_thresh=0.05,plot_title="Volcano plot",label_top_n=0,show_non_sig_interest=TRUE){
+  
+  DE_res$Significance <- NA
+  sigUp <- which(DE_res$log2FoldChange>l2FC_thresh & DE_res[filter_choice]<p_thresh)
+  DE_res[ sigUp, "Significance"] <- paste0("up-reg with ",filter_choice,"<",p_thresh," (",length(sigUp),")")
+  
+  #subset and fill columns based on significant downregulation
+  sigDown <- which(DE_res$log2FoldChange<(-l2FC_thresh) & DE_res[filter_choice]<p_thresh)
+  DE_res[ sigDown, "Significance"] <- paste0("down-reg with ",filter_choice,"<",p_thresh," (",length(sigDown),")")
+  
+  #subset and fill columns based on non-significant upregulation
+  nonSig <- which(DE_res[filter_choice]>=p_thresh)
+  DE_res[ nonSig, "Significance"] <- paste0("non-significant with ",filter_choice,">",p_thresh," (",length(nonSig),")")
+  
+  lowSig <- which(abs(DE_res$log2FoldChange)<=l2FC_thresh & DE_res[filter_choice]<p_thresh)
+  DE_res[ lowSig, "Significance"] <- paste0("low-regulation with ",filter_choice,"<",p_thresh," (",length(lowSig),")")
+  
+  #Find the lowest significant point to draw a horizontal ax-line at that point on the axis
+  #Sort using the filter choice
+  DE_res <- DE_res[order(DE_res[[filter_choice]]),]
+  #Find the 'first' non significant gene
+  gene_for_sig_line<-DE_res$gene[DE_res$Significance==paste0("non-significant with ",filter_choice,">",p_thresh," (",length(nonSig),")")][1]
+  #Create a dataframe of necessary columns and convert padj to -log10 (as is it's form in the plot)
+  find_lowest_sig<-DE_res[,c('gene','padj')]
+  find_lowest_sig$padj<- -log10(find_lowest_sig$padj)
+  #Extract value based on the gene.
+  lowest_sig<-find_lowest_sig$padj[find_lowest_sig$gene==gene_for_sig_line]
+  
+  labs_data <- DE_res[DE_res$gene %in% genes_of_interest, ]
+  if (show_non_sig_interest==FALSE){
+    labs_data <- labs_data[labs_data[filter_choice]<p_thresh & abs(labs_data$log2FoldChange)>l2FC_thresh,]
+  }
+  if (label_top_n>0){
+    top_res <- DE_res[order(DE_res[filter_choice]),]
+    labs_data_top <- top_res[1:label_top_n,]
+  }else{
+    labs_data_top <- DE_res[FALSE,]
+  }
+  
+  v_plot <- ggplot(DE_res, aes(x = log2FoldChange, y = -log10(padj), color=Significance)) +
+    geom_point(size=0.8) +
+    geom_hline(yintercept=lowest_sig, linetype="dashed", color = "black")+
+    xlab(expression('Log'[2]*'Fold Change')) +
+    ylab(expression('-log10(padj)')) +
+    geom_vline(xintercept = l2FC_thresh, linetype="dashed", color = "black") +
+    geom_vline(xintercept = -l2FC_thresh, linetype="dashed", color = "black") +
+    ggrepel::geom_label_repel(data = labs_data, mapping = aes(label = gene),
+                              box.padding = unit(0.35, "lines"),
+                              point.padding = unit(0.3, "lines"),
+                              force = 1, segment.colour = 'black',show.legend = FALSE,
+                              label.size = 1)+
+    
+    ggrepel::geom_label_repel(data = labs_data_top, mapping = aes(label = gene),
+                              box.padding = unit(0.35, "lines"),
+                              point.padding = unit(0.3, "lines"),
+                              force = 0.5, colour = 'black',show.legend = FALSE) +
+    
+    scale_color_manual(breaks = c(paste0("up-reg with ",filter_choice,"<",p_thresh," (",length(sigUp),")"),
+                                  paste0("down-reg with ",filter_choice,"<",p_thresh," (",length(sigDown),")"),
+                                  paste0("non-significant with ",filter_choice,">",p_thresh," (",length(nonSig),")"),
+                                  paste0("low-regulation with ",filter_choice,"<",p_thresh," (",length(lowSig),")")),
+                       values=c("#B31B21","#1465AC","darkgray","green")) +
+    guides(color = guide_legend(override.aes = list(size = 7)))+
+    ggtitle(plot_title) +
+    theme_light()+
+    theme(text = element_text(size = 10),
+          plot.title = element_text(size = 20),
+          legend.text = element_text(size = 10))
+  
+  return(v_plot)
+}
+```
+
+# Load data
+#### Load gene count data
+```{r import_counts, include=FALSE}
+
+  # STAR quantMode geneCounts output:
+  #column 1: gene ID
+  #column 2: counts for unstranded RNA-seq
+  #column 3: counts for the 1st read strand aligned with RNA (htseq-count option -s yes)
+  #column 4: counts for the 2nd read strand aligned with RNA (htseq-count option -s reverse)
+  
+sampleNames <- list.files(path = glue::glue("gene_expression/data/GeneCounts_merged/"), pattern = "*ReadsPerGene.out.tab") %>%
+    stringr::str_split_fixed("_", n = 4) %>%
+    tibble::as_tibble() %>%
+    dplyr::mutate(Name = V1) %>%
+    dplyr::select(Name) %>% 
+    purrr::flatten_chr()
+  
+geneIDs <- list.files(path = glue::glue("gene_expression/data/GeneCounts_merged/"), pattern = "*ReadsPerGene.out.tab", full.names = T)[1] %>% 
+    data.table::fread(select = 1) %>%
+    purrr::flatten_chr()
+  
+countMatrix <- list.files(path = glue::glue("gene_expression/data/GeneCounts_merged/"), pattern = "*ReadsPerGene.out.tab", full.names = T) %>%
+    purrr::map_dfc(data.table::fread, select = 3, data.table = F) %>%
+    magrittr::set_colnames(sampleNames) %>% 
+    magrittr::set_rownames(geneIDs)
+  
+countMatrix <- countMatrix[-c(1:4),]
+```
+
+#### Sample metadata
+```{r sample_metadata}
+# Import sample metadata
+sdat0 <- read_csv("gene_expression/data/sample_metadata.csv") %>%
+  filter(sample_ID %in% sampleNames)
+sdat0$treatment <- gsub("C", "Control", sdat0$treatment)
+sdat0$batch <- gsub(60, "Lab_cross", sdat0$batch)
+sdat0$batch <- gsub(71, "Wild_cross", sdat0$batch)
+
+sdat_W <- sdat0[sdat0$batch == "Wild_cross",] %>%
+  arrange(sample_ID) %>%                              # order rows by sample name
+  column_to_rownames(var = "sample_ID")               # set sample name to rownames
+
+countMatrix_W <- countMatrix[, colnames(countMatrix) %in% rownames(sdat_W)]
+
+sdat_L <- sdat0[sdat0$batch == "Lab_cross",] %>%
+  arrange(sample_ID) %>%                              # order rows by sample name
+  column_to_rownames(var = "sample_ID") 
+
+countMatrix_L <- countMatrix[, colnames(countMatrix) %in% rownames(sdat_L)]
+```
+# Wild Cohort
+### Create DESeq objects
+```{r create_dds}
+
+#load("output/counts_and_meta_Wild.RData")
+
+# Create full DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = countMatrix_W,
+                              colData = sdat_W,
+                              design = ~ treatment + tissue)
+### Remove genes counted zero times
+dds <- dds[ rowSums(counts(dds)) > 0, ]
+
+```
+
+## Outlier detection
+```{r outlier detection}
+
+# GLM PCA
+gpca <- glmpca(counts(dds), L=2)
+gpca.dat <- gpca$factors
+gpca.dat$Sample <- dds$animal_ID
+gpca.dat$Treatment <- dds$treatment
+gpca.dat$tissue <- dds$tissue
+
+pglmpca <- ggplot(gpca.dat, aes(x = dim1, y = dim2, color = Treatment, label = Sample, shape = tissue)) +
+  geom_point(size =3,) + coord_fixed() +   
+  ggtitle("glmpca - Generalized PCA, ")
+pglmpca
+
+# One of the 7 day hypoxia samples is an outlier
+
+poisd <- PoissonDistance(t(counts(dds)))
+samplePoisDistMatrix <- as.matrix(poisd$dd)
+colnames(samplePoisDistMatrix) <- rownames(colData(dds))
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+pheatmap(samplePoisDistMatrix,
+         clustering_distance_rows = poisd$dd,
+         clustering_distance_cols = poisd$dd,
+         col = colors)
+
+# AC175A is an outlier. Will exclude
+
+sdat_W <- sdat0[sdat0$batch == "Wild_cross",] %>%
+  filter(sample_ID != "AC175A") %>%
+  arrange(sample_ID) %>%                              # order rows by sample name
+  column_to_rownames(var = "sample_ID") 
+
+countMatrix_W <- countMatrix[, colnames(countMatrix) %in% rownames(sdat_W)]
+```
+
+```{r subset count data for TS analysis}
+
+dir.create(paste0('gene_expression/data/','Wild_PlPed_vs_Abd'))
+
+sdat1 <- sdat0 %>%
+  mutate(group = sdat0$tissue,
+         group = gsub("A", "Abdominal_ganglion", group),
+         group = gsub("Pp", "PleuralPedal_ganglia", group),
+         sample = sdat0$sample_ID) %>%
+  mutate(timepoint = sdat0$treatment,
+         timepoint = gsub("Control", 0, timepoint),
+         timepoint = gsub("Hyp_T2h", 1, timepoint),
+         timepoint = gsub("Hyp_T6h", 2, timepoint),
+         timepoint = gsub("Reox", 3, timepoint),
+         timepoint = gsub("LtH_6", 4, timepoint),
+         timepoint = gsub("LtH_7", 5, timepoint),
+         timepoint = gsub("Recovery", 6, timepoint)) %>%
+  filter(batch == "Wild_cross") %>%
+  filter(sample != "AC175A") %>%
+  group_by(group, timepoint) %>%
+  mutate(group_initials = case_when(
+           group == "Abdominal_ganglion" ~ "AG",
+           group == "PleuralPedal_ganglia" ~ "PpG"),
+         replicate = paste0(group_initials, "_", row_number())) %>%
+  ungroup() %>%
+  dplyr::select(sample, replicate, timepoint, group, treatment)
+write_csv(sdat1, "gene_expression/data/Wild_PlPed_vs_Abd/sample_meta.csv")
+  
+
+# Directory where files will be saved
+dir.create(paste0('gene_expression/data/','Wild_PlPed_vs_Abd/counts'))
+output_dir <- "/gene_expression/data/Wild_PlPed_vs_Abd/counts/"  # Specify your directory
+
+# Loop through each sample (column) in the matrix
+for (sample in colnames(countMatrix[,sdat1$sample])) {
+  # Subset the matrix to get the data for the current sample (column)
+  sample_data <- countMatrix[, sample, drop = FALSE]
+  # Save the sample data to a tab-delimited file
+  write.table(sample_data, file = paste0(getwd(),output_dir, sample, ".counts"), sep = "\t", col.names = FALSE, quote = FALSE)
+}
+
+```
+
+```{r pipeline for DE and clustering PluralvsAbdominal_wild}
+
+#Give names to saved object and name of results repository
+dir.create('gene_expression/output/TS_output')
+dir.create('gene_expression/output/TS_output/Wild_PlPed_vs_Abd')
+name_result_folder<-'gene_expression/output/TS_output/Wild_PlPed_vs_Abd/'
+obj_name<-'timeSeries_obj_Wild_PlPed_vs_Abd.Rdata'
+
+graphic_vector<-c("#e31a1c","#1f78b4") #Pre-set colors for the groups
+names(graphic_vector)<-c('PleuralPedal_ganglia','Abdominal_ganglion')
+
+# Object creation -------------------
+TS_object <- new('TimeSeries_Object',
+                 group_names=c('PleuralPedal_ganglia','Abdominal_ganglion'),group_colors=graphic_vector,
+                 DE_method='DESeq2',DE_p_filter='padj',DE_p_thresh=0.05,
+                 DE_l2fc_thresh=0,PART_l2fc_thresh=2,sem_sim_org='org.Hs.eg.db',Gpro_org='hsapiens')
+
+TS_object <- add_experiment_data(TS_object,
+                                        sample_dta_path="gene_expression/data/Wild_PlPed_vs_Abd/sample_meta.csv",
+                                        count_dta_path="gene_expression/data/Wild_PlPed_vs_Abd/counts/")
+TS_object <- add_semantic_similarity_data(TS_object,"BP")
+
+# DESeq2 -------------------
+TS_object <- normalize_timeSeries_with_deseq2(time_object=TS_object)
+#Perform conditional differential gene expression analysis
+TS_object<-conditional_DE_wrapper(TS_object)
+#Perform temporal differential gene expression analysis
+TS_object<-temporal_DE_wrapper(TS_object,do_all_combinations=TRUE)
+
+# Subset temporal comparisons to only relevant ones
+temp_to_keep <- c("TP_1_vs_TP_0", "TP_2_vs_TP_0", "TP_4_vs_TP_0", "TP_5_vs_TP_0", "TP_3_vs_TP_2", "TP_6_vs_TP_2")
+TS_object@DE_results$temporal <- TS_object@DE_results$temporal[temp_to_keep]
+
+# PART -------------------
+#Extract genes for PART clustering based on defined log(2)foldChange threshold
+signi_genes<-select_genes_with_l2fc(TS_object)
+
+sample_data<-exp_sample_data(TS_object)
+#Use all samples, but implement a custom order. In this case it is reversed
+samps_2<-sample_data$sample[sample_data$group==TS_object@group_names[2]]
+samps_1<-sample_data$sample[sample_data$group==TS_object@group_names[1]]
+
+#Create the matrix that will be used for PART clustering
+TS_object<-prep_counts_for_PART(object=TS_object,target_genes=signi_genes,
+                                scale=TRUE,target_samples=c(samps_2,samps_1))
+
+#Sets a seed for reproducibility
+set.seed('123456')
+
+
+TS_object<-compute_PART(TS_object,part_recursion=120,part_min_clust=50,
+                        custom_seed=123456,dist_param="euclidean", hclust_param="average")
+
+# Gprofiler -------------------
+TS_object<-run_gprofiler_PART_clusters(TS_object) #Run the gprofiler analysis with modified function to get human orthologs 
+
+# PCA -------------------
+TS_pca<-plot_PCA_TS(TS_object,DE_type='all')
+ggsave(paste0(name_result_folder,"PCA_plot.png"),dpi=300,width=21, height=19, units='cm',plot=TS_pca)
+
+# DESeq2 results -------------------
+#Set genes of interest (optional) - can be left as c()
+genes_of_interest <- c('LOC101850742','LOC101857241','LOC101857709','LOC101851246','LOC101857475','LOC101849091', "COX1","ND6","ND5","ND1","NDL4","CYTB","COX2","ATP8","ATP6","ND3","ND4","COX3","ND2")
+#Run wrappers twice once for conditional and another for temporal
+plot_wrapper_DE_results(object=TS_object,DE_type='conditional',genes_of_interest=genes_of_interest,results_folder=name_result_folder)
+plot_wrapper_DE_results(object=TS_object,DE_type='temporal',genes_of_interest=genes_of_interest,results_folder=name_result_folder)
+
+# PART results -------------------
+dir.create(paste0(name_result_folder,'PART_results')) #create the directory to store results
+PART_heat_map(TS_object,paste0(name_result_folder,'PART_results/PART_heat')) #Create a summary heatmap
+ts_data<-calculate_cluster_traj_data(TS_object,scale_feat=TRUE) #Calculate scaled gene values for genes of clusters
+mean_ts_data<-calculate_mean_cluster_traj(ts_data) #Calculate the mean scaled values for each cluster
+
+#Function which determines the number of SVG files to plot all cluster trajectories
+wrapper_cluster_trajectory(TS_object,ts_data,mean_ts_data,yaxis_name='scaled mean counts',log_TP=F,plot_name=paste0(name_result_folder,'/PART_results/Ctraj'))
+
+# Gprofiler results -------------------
+#Create standard gprofiler results
+
+gpro_res<-gprofiler_cluster_analysis(TS_object,'All',save_path = name_result_folder)
+GO_clusters<-gpro_res[['GO_df']]
+sem_dta<-slot(TS_object,'sem_list')
+found_clusters<-find_clusters_from_termdist(GO_clusters,sem_dta)
+
+#Plot and save MDS and clustered MDS
+MDS_plots<-wrapper_MDS_and_MDS_clusters(GO_clusters,sem_dta,'BP',target_dir=paste0(name_result_folder,'gprofiler_results/'),return_plot=TRUE)
+
+#Create dotplots
+GO_dotplot_wrapper(TS_object,file_loc=name_result_folder,target_ontology='GO:BP',top_n=10,custom_width=10)
+GO_dotplot_wrapper(TS_object,file_loc=name_result_folder,target_ontology='GO:MF',top_n=10,custom_width=10)
+GO_dotplot_wrapper(TS_object,file_loc=name_result_folder,target_ontology='GO:CC',top_n=10,custom_width=10)
+
+# Ancestor queries results -------------------
+ancestor_list <- c("GO:0001666","GO:0071456","GO:0002250","GO:0002376","GO:0002283","GO:0002252", "GO:0002684","GO:0008152","GO:0006950","GO:0030324","GO:0042990","GO:0006950","GO:0007610","GO:0008285","GO:0043522","GO:0010467","GO:0001501")
+GOs_ancestors_clust<-find_relation_to_ancestors(target_ancestors=ancestor_list,GOs_to_check=GO_clusters,ontology = 'BP')
+ancestor_plots<-wrapper_ancestor_curation_plots(GOs_ancestors_clust,sem_dta,return_plot=TRUE,target_dir=name_result_folder)
+
+save(TS_object,file=paste0(name_result_folder,obj_name))
+
+```
+
+## DE analysis for each ganglia
+```{r create_dds again}
+sdat_W <- sdat_W %>%
+  mutate(tissue.group = interaction(tissue, treatment)) %>%
+  mutate_if(is.character, as.factor)
+
+# Create full DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = countMatrix_W,
+                              colData = sdat_W,
+                              design = ~ treatment + tissue)
+### Remove genes with low counts
+dds <- dds[ rowSums(counts(dds)) > 1, ]
+
+# Run DESeq pipeline
+design(dds) <- formula(~ tissue.group)
+dsr1 <- DESeq(dds)
+
+# Define group contrasts
+group.contrasts <- tibble(num = c("Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Recovery",
+                                  "Hyp_T6h","Reox","Recovery","Reox","LtH_6","LtH_7"),
+                          den = c("Control","Control","Control","Control","Control","Control",
+                                  "Hyp_T2h","Hyp_T6h","Hyp_T6h","Recovery","Hyp_T6h","Hyp_T6h"))
+
+# Get DESeq results for all group contrasts for each batch
+DE <- tidyr::crossing(tissue = c("A", "Pp"), group.contrasts) %>%
+  mutate(dsr = pmap(list(tissue, num, den), function(x, y, z) {
+    results(dsr1, contrast = c("tissue.group", paste0(x, ".", c(y, z))))}))
+
+#Then, run model with no separation between batches
+
+# Run DESeq pipeline 
+design(dds) <- formula(~ treatment)
+dsr2 <- DESeq(dds)
+
+# Get DESeq results for all contrasts and join with results from each batch, from above
+DE <- tidyr::crossing(batch = "all", group.contrasts) %>%
+  mutate(dsr = map2(num, den, ~ results(dsr2, contrast = c("treatment", .x, .y)))) %>%
+  bind_rows(DE)
+```
+
+### Get significant DEGs
+```{r get_DEgenes Abdominal all}
+DE <- DE %>%
+  mutate(sig = map(dsr, ~ rownames_to_column(data.frame(.[which(.$padj < 0.05), ]), "gene")),
+          up = map(sig, ~ filter(., log2FoldChange > 0)),
+        down = map(sig, ~ filter(., log2FoldChange < 0)),
+        full = map(dsr, ~ rownames_to_column(data.frame(.), "gene"))) 
+
+# Generate logP values for all differential expression contrasts
+DE <- DE %>% mutate(logP = map(dsr, ~ data.frame(
+  gene = rownames(data.frame(.)),
+  logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
+
+# Count number of differentially expressed genes within each batch, and overall, for each contrast
+DE_tab <- DE %>%
+  filter((num == "Hyp_T2h" & den == "Control")|(num == "Hyp_T6h" & den == "Control")|
+         (num == "LtH_6" & den == "Control")|(num == "LtH_7" & den == "Control")|
+         (num == "Reox" & den == "Control")|(num == "Recovery" & den == "Control")|
+         (num == "Hyp_T6h" & den == "Hyp_T2h")|(num == "Reox" & den == "Hyp_T6h")|
+         (num == "Recovery" & den == "Hyp_T6h")|(num == "Reox" & den == "Recovery")|
+         (num == "LtH_6" & den == "Hyp_T6h")|(num == "LtH_7" & den == "Hyp_T6h")) %>%
+  mutate(nsig = map_dbl( sig, ~ nrow(.)),
+          nup = map_dbl(  up, ~ nrow(.)),
+          ndn = map_dbl(down, ~ nrow(.)),
+          `DEGs [up, down]` = paste0(nsig, " [", nup, ", ", ndn, "]")) %>%
+  mutate(ganglia = case_when(tissue == "A" ~ "abdominal", tissue == "Pp" ~ "pleural/pedal", 
+                           tissue == "all" ~ "all ganglia")) %>%
+  mutate(ganglia = factor(ganglia, levels = c("abdominal", "pleural/pedal", "all ganglia"))) %>%
+  dplyr::select(ganglia, num, den, `DEGs [up, down]`) %>%
+  spread(ganglia, `DEGs [up, down]`)
+
+DE_tab$contrast <- paste(DE_tab$num, DE_tab$den, sep = " vs ")
+dek <- DE_tab %>% dplyr::select(c(6,3:5)) %>%
+  knitr::kable(format = "markdown", caption = "Number of differentially expressed genes per ganglia and across all ganglia for each specified contrast. DEGs identified using DESeq with an adjusted p-value < 0.05. In brackets are the numbers of significantly up- and down-regulated genes.", row.names = )
+
+dek
+```
+
+```{r export complete matrix with DE results for CtrlvsHypoxia contrasts}
+DE %>%
+  unnest(full) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(., gene, log2FoldChange, padj, contrast) %>%
+  write_csv(., file = "gene_expression/output/DE_wild/Abdominal/DE_raw_data.csv")
+
+DE %>%
+  unnest(full) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(., gene, log2FoldChange, padj, contrast) %>%
+  write_csv(., file = "gene_expression/output/DE_wild/Pleural/DE_raw_data.csv")
+
+res_A <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(.,contrast, gene, log2FoldChange)
+write_csv(res_A, file = "gene_expression/output/DE_wild/Abdominal/DE_sig_data.csv")
+
+res_Pp <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(.,contrast, gene, log2FoldChange)
+write_csv(res_A, file = "gene_expression/output/DE_wild/Pleural/DE_sig_data.csv")
+```
+
+
+```{r plot DEG results}
+DEGs_A <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  dplyr::select(.,contrast, gene)
+DEGs_A_wide <- list(Hyp_T2h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control"),2]),
+                 Hyp_T6h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control"),2]),
+                 Hyp_T6d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_6.Control"),2]),
+                 Hyp_T7d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_7.Control"),2]))
+str(DEGs_A_wide)
+gv3 <- ggvenn(DEGs_A_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv3
+ggsave("gene_expression/output/DE_wild/Abdominal/DEGs_vennDiagram.png", gv3, height = 3, width = 5)
+
+DEGs_Pp <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  dplyr::select(.,contrast, gene)
+DEGs_Pp_wide <- list(Hyp_T2h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T2h.Control"),2]),
+                 Hyp_T6h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T6h.Control"),2]),
+                 Hyp_T6d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_6.Control"),2]),
+                 Hyp_T7d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_7.Control"),2]))
+str(DEGs_Pp_wide)
+gv2 <- ggvenn(DEGs_Pp_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv2
+ggsave("gene_expression/output/DE_wild/Pleural/DEGs_vennDiagram.png", gv2, height = 3, width = 5)
+
+
+DEGs_wild <- DE %>%
+  unnest(sig) %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
+  dplyr::select(.,contrast, gene, tissue)
+DEGs_wild_wide <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A"),2]),
+                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp"),2]))
+str(DEGs_wild_wide)
+gv3 <- ggvenn(DEGs_wild_wide, fill_color = c("#0073C2FF", "#EFC000FF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv3
+ggsave("gene_expression/output/DE_wild/DEGs_Wild_by_tissue_vennDiagram.png", gv3, height = 3, width = 5)
+
+volcano_plots_A <- DE %>%
+  unnest(full) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(gene, log2FoldChange, padj, contrast) %>%
+  group_by(contrast) %>%  # Group by contrast
+  nest() %>%             # Nest data for each contrast
+  mutate(plots = map2(data, contrast, ~ volcanoplot_alt(.x, plot_title=.y))) 
+
+# View the plots
+volcano_plots_A$plots
+
+# Save all plots to files
+volcano_plots_A %>%
+  mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_wild/Abdominal/",.y, "_volcano.png"), plot = .x)))
+
+volcano_plots_Pp <- DE %>%
+  unnest(full) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(gene, log2FoldChange, padj, contrast) %>%
+  group_by(contrast) %>%  # Group by contrast
+  nest() %>%             # Nest data for each contrast
+  mutate(plots = map2(data, contrast, ~ volcanoplot_alt(.x, plot_title=.y))) 
+
+# View the plots
+volcano_plots_Pp$plots
+
+# Save all plots to files
+volcano_plots_Pp %>%
+  mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_wild/Pleural/",.y, "_volcano.png"), plot = .x)))
+```
+
+## Clustering for temporal analysis
+
+```{r cluster transcriptional profiles, echo=FALSE, message=FALSE, warning = FALSE} 
+
+DEGs_wild <- DE %>%
+  unnest(sig) %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
+  dplyr::select(.,contrast, gene, tissue, log2FoldChange) %>%
+  filter(abs(log2FoldChange) >= 0)
+DEGs_wild_wide <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A"),2]),
+                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp"),2]))
+
+cds <- DESeqDataSetFromMatrix(countMatrix, sdat, design = ~tissue.group)
+cds <- cds[ rowMeans(counts(cds)) > 1, ]
+dds <- estimateSizeFactors(cds)
+normalized_counts <- counts(dds, normalized=TRUE)
+
+normalized_L2 <- log2(normalized_counts+1)
+
+# use all DEGs for temporal contrasts
+res_patterns_A <- DEGreport::degPatterns(
+  ma = normalized_L2[rownames(normalized_L2) %in% DEGs_wild_wide$abdominal, rownames(sdat)],
+  metadata = data.frame(time = sdat$treatment, row.names = rownames(sdat), Tissue = sdat$tissue),
+  reduce = TRUE,
+  minc = 50,
+  col = "Tissue",
+  groupDifference = 0.58
+)
+
+res.A_clusters <- res_patterns_A$df
+res.A_patterns <- res_patterns_A$normalized
+save(res.A_clusters,res.A_patterns, file ="gene_expression/data/clusters_A.R")
+
+res_patterns_Pp <- DEGreport::degPatterns(
+  ma = normalized_L2[rownames(normalized_L2) %in% DEGs_wild_wide$pleural, rownames(sdat)],
+  metadata = data.frame(time = sdat$treatment, row.names = rownames(sdat),
+                        Tissue = sdat$tissue), 
+  reduce = TRUE,
+  minc = 20,
+  col = "Tissue",
+  groupDifference = 0.58)
+
+res.Pp_clusters <- res_patterns_Pp$df
+res.Pp_patterns <- res_patterns_Pp$normalized
+save(res.Pp_clusters,res.Pp_patterns, file ="gene_expression/data/clusters_Pp.R")
+```
+
+###label clusters
+```{r}
+
+library(ComplexHeatmap)
+
+#load("data/clusters_A.R")
+#load("data/clusters_Pp.R")
+
+###A heatmap 
+A.norm <- res.A_patterns %>% 
+  filter(.,Tissue == "A") %>%
+  dplyr::select(genes, time, value, cluster) %>% 
+  tidyr::spread(time, value) %>% column_to_rownames("genes")
+A.norm[A.norm$cluster == 3,]$cluster <- "A1"
+A.norm[A.norm$cluster == 8,]$cluster <- "A2"
+A.norm[A.norm$cluster == 9,]$cluster <- "A3"
+A.norm[A.norm$cluster == 12,]$cluster <- "A10"
+A.norm[A.norm$cluster == 16,]$cluster <- "A4"
+A.norm[A.norm$cluster == 18,]$cluster <- "A5"
+A.norm[A.norm$cluster == 20,]$cluster <- "A11"
+A.norm[A.norm$cluster == 24,]$cluster <- "A12"
+A.norm[A.norm$cluster == 35,]$cluster <- "A6"
+A.norm[A.norm$cluster == 61,]$cluster <- "A9"
+A.norm[A.norm$cluster == 84,]$cluster <- "A7"
+A.norm[A.norm$cluster == 89,]$cluster <- "A13"
+A.norm[A.norm$cluster == 120,]$cluster <- "A8"
+A.norm <- A.norm[c(1:4,8,5:7)]
+
+# A1-A6 Up, A7-A9 Down 
+
+A_clust_UP <- c("A1","A2","A3","A4","A5","A6","A7","A8","A9")
+A_clust_DOWN <- c("A10","A11","A12","A13")
+
+A_clust <- c(
+  "3" = "A1",
+  "8" = "A2",
+  "9" = "A3",
+  "12" = "A10",
+  "16" = "A4",
+  "18" = "A5",
+  "20" = "A11",
+  "24" = "A12",
+  "35" = "A6",
+  "61" = "A9",
+  "84" = "A7",
+  "89" = "A13",
+  "120" = "A8"
+)
+
+res.A_patterns$clust <- factor(A_clust[as.character(res.A_patterns$cluster)], levels = c("A1","A2","A3","A4","A5",
+                                                                                      "A6","A7","A8","A9","A10",
+                                                                                      "A11","A12","A13"),
+                               ordered = T)
+A.norm$cluster <- factor(A.norm$cluster, levels = c("A1","A2","A3","A4","A5","A6","A7","A8","A9","A10","A11","A12","A13"), ordered = T)
+res.A_clusters$clust <- factor(A_clust[as.character(res.A_clusters$cluster)], levels = c("A1","A2","A3","A4","A5","A6","A7","A8","A9","A10","A11","A12","A13"), ordered = T)
+res.A_clusters <- res.A_clusters %>% mutate( direction = 
+                               ifelse(clust %in% c("A10","A11","A12","A13"), "DOWN","UP")
+                               ) 
+
+A_clusters <- split(res.A_clusters, f = res.A_clusters$clust)
+names(A_clusters) <- unique(res.A_clusters$clust)
+
+###Pp heatmap 
+Pp.norm <- res.Pp_patterns %>% 
+  filter(.,Tissue == "Pp") %>%
+  dplyr::select(genes, time, value, cluster) %>% 
+  tidyr::spread(time, value) %>% column_to_rownames("genes")
+Pp.norm[Pp.norm$cluster == 6,]$cluster <- "P5"
+Pp.norm[Pp.norm$cluster == 8,]$cluster <- "P1"
+Pp.norm[Pp.norm$cluster == 9,]$cluster <- "P2"
+Pp.norm[Pp.norm$cluster == 12,]$cluster <- "P3"
+Pp.norm[Pp.norm$cluster == 14,]$cluster <- "P4"
+Pp.norm <- Pp.norm[c(1:4,8,5:7)]
+
+#P1 P2 Up
+
+Pp_clust <- c(
+  "6" = "P5",
+  "8" = "P1",
+  "9" = "P2",
+  "12" = "P3",
+  "14" = "P4"
+)
+
+res.Pp_patterns$clust <- Pp_clust[as.character(res.Pp_patterns$cluster)]
+res.Pp_clusters$clust <- Pp_clust[as.character(res.Pp_clusters$cluster)]
+res.Pp_clusters <- res.Pp_clusters %>% mutate( direction = 
+                               ifelse(clust %in% c("P5"),"DOWN", "UP")
+                               ) 
+Pp_clusters <- split(res.Pp_clusters, f = res.Pp_clusters$clust)
+names(Pp_clusters) <- unique(res.Pp_clusters$clust)
+
+```
+
+
+
+### heatmap for clusters 
+```{r A heatmap,fig.width= 3.54, fig.height=8}
+
+panel_fun = function(index) {
+  pushViewport(viewport(xscale = c(1,8), yscale = c(-2, 2)))
+  grid.rect()
+  #lines for each contributing gene
+  # for(i in seq_along(index)) {
+  #   grid.lines(x = (c(7:11,11.95)-6.5)/6,y = (as.vector(A.norm[index[i],2:7])+2)/4, gp = gpar(col = "lightgrey"))
+  # }
+  #95% CI lines
+  grid.polygon(x = c( (c(6:12)-6)/6, rev(c(6:11,12)-6)/6),
+                 y = c(
+                   ( colMeans(A.norm[index,2:8]) + 1.96 * colSds(as.matrix(A.norm[index,2:8]))+2)/4,
+                 rev(( colMeans(A.norm[index,2:8]) - 1.96 * colSds(as.matrix(A.norm[index,2:8]))+2)/4)
+                 ),
+                 gp = gpar(fill = "lightgrey", col = 0))
+  # grid.lines(x = (c(7:11,11.95)-6.5)/6,
+  #            y = ( colMeans(A.norm[index,2:7]) + 1.96 * colSds(as.matrix(A.norm[index,2:7]))+2)/4,
+  #            gp = gpar(col = "black", lty = 2, lwd = 2))
+  # grid.lines(x = (c(7:11,11.95)-6.5)/6,
+  #            y = ( colMeans(A.norm[index,2:7]) - 1.96 * colSds(as.matrix(A.norm[index,2:7]))+2)/4,
+  #            gp = gpar(col = "black", lty = 2, lwd = 2))
+  #eigen-trajectory
+  grid.lines(x = (c(6:11,11.95)-6)/6,y = (as.vector(colMeans(A.norm[index,2:8]))+2)/4, gp = gpar(col = "red", lwd = 2))
+  #genes in cluster
+  grid.text(x = 0.5, y = 0.94, label = paste0("n= ",length(index)), just = "center", gp = gpar(fontsize = 8))
+  #axes
+  if(length(index) == 163) grid.xaxis(gp = gpar(fontsize = 8))
+  grid.yaxis(gp = gpar(fontsize = 8), main = FALSE)
+  popViewport()
+}
+
+
+
+anno = anno_zoom(align_to = A.norm$cluster, 
+                 which = "row", 
+                 panel_fun = panel_fun, 
+                 size = 0.3, 
+                 gap = unit(0.3,"cm"), 
+                 width = unit(4, "cm"),
+                 link_width = unit(1,"cm"))
+
+ht.A.clusters <- Heatmap( matrix = A.norm[,2:8],
+                            name = "scaled TPM",
+                            cluster_rows = FALSE,
+                            cluster_row_slices = FALSE,
+                            cluster_columns = FALSE,
+                            show_row_names = FALSE,
+                            column_names_side = "top",
+                            column_names_centered = TRUE,
+                            column_names_rot = 90,
+                            column_names_gp = gpar(fontsize = 8),
+                            #width = unit(3, "cm"),
+                            row_split = A.norm$cluster,
+                            row_title_rot = 0,
+                            #column_title = "Treatment",
+         right_annotation = rowAnnotation(cluster = anno),
+         show_heatmap_legend = FALSE,
+         heatmap_legend_param = list(legend_direction = "horizontal", 
+                                                    title_position = "topcenter"),
+         heatmap_width = unit(8, "cm")
+         )
+
+# svg(filename = "../figures/A.clusters.svg", width = 3.625, height = 8)
+pdf(file = "gene_expression/figures/A.clusters.pdf", width = 4, height = 8)
+draw(ht.A.clusters, heatmap_height = unit(19.5, "cm"), heatmap_legend_side = "bottom",  padding = unit(c(0, 0, 0, 0.5), "cm"))
+
+# decorate_row_title("scaled TPM",{
+#     grid.text("A", y = unit(1.8, "npc") , x = unit(0, "npc"), just = "left", gp = gpar(fontsize = 22)) })
+dev.off()
+
+
+```
+
+
+```{r Pp heatmap,fig.width= 3.54, fig.height=6}
+
+panel_fun = function(index) {
+  pushViewport(viewport(xscale = c(1,8), yscale = c(-2, 2)))
+  grid.rect()
+  #lines for each contributing gene
+  # for(i in seq_along(index)) {
+  #   grid.lines(x = (c(7:11,11.95)-6.5)/6,y = (as.vector(Pp.norm[index[i],2:7])+2)/4, gp = gpar(col = "lightgrey"))
+  # }
+  #95% CI lines
+  grid.polygon(x = c( (c(6:12)-6)/6, rev(c(6:11,12)-6)/6),
+                 y = c(
+                   ( colMeans(Pp.norm[index,2:8]) + 1.96 * colSds(as.matrix(Pp.norm[index,2:8]))+2)/4,
+                 rev(( colMeans(Pp.norm[index,2:8]) - 1.96 * colSds(as.matrix(Pp.norm[index,2:8]))+2)/4)
+                 ),
+                 gp = gpar(fill = "lightgrey", col = 0))
+  # grid.lines(x = (c(7:11,11.95)-6.5)/6,
+  #            y = ( colMeans(Pp.norm[index,2:7]) + 1.96 * colSds(as.matrix(Pp.norm[index,2:7]))+2)/4,
+  #            gp = gpar(col = "black", lty = 2, lwd = 2))
+  # grid.lines(x = (c(7:11,11.95)-6.5)/6,
+  #            y = ( colMeans(Pp.norm[index,2:7]) - 1.96 * colSds(as.matrix(Pp.norm[index,2:7]))+2)/4,
+  #            gp = gpar(col = "black", lty = 2, lwd = 2))
+  #eigen-trajectory
+  grid.lines(x = (c(6:11,11.95)-6)/6,y = (as.vector(colMeans(Pp.norm[index,2:8]))+2)/4, gp = gpar(col = "red", lwd = 2))
+  #genes in cluster
+  grid.text(x = 0.5, y = 0.94, label = paste0("n= ",length(index)), just = "center", gp = gpar(fontsize = 8))
+  #axes
+  if(length(index) == 163) grid.xaxis(gp = gpar(fontsize = 8))
+  grid.yaxis(gp = gpar(fontsize = 8), main = FALSE)
+  popViewport()
+}
+
+anno = anno_zoom(align_to = Pp.norm$cluster, 
+                 which = "row", 
+                 panel_fun = panel_fun, 
+                 size = 0.3, 
+                 gap = unit(0.3,"cm"), 
+                 width = unit(4, "cm"),
+                 link_width = unit(1,"cm"))
+
+
+ht.Pp.clusters <- Heatmap( matrix = Pp.norm[,2:8],
+         name = "scaled_TPM",
+         cluster_rows = FALSE,
+         cluster_row_slices = FALSE,
+         cluster_columns = FALSE,
+         show_row_names = FALSE,
+         column_names_side = "bottom",
+         column_names_centered = TRUE,
+         column_names_rot = 90,
+         column_names_gp = gpar(fontsize = 8),
+         #width = unit(3, "cm"),
+         row_split = Pp.norm$cluster,
+         row_title_rot = 0,
+         #column_title = "Treatment",
+         right_annotation = rowAnnotation(cluster = anno),
+         show_heatmap_legend = FALSE,
+         heatmap_legend_param = list(legend_direction = "horizontal", 
+                                                    title_position = "topcenter"),
+         heatmap_width = unit(7.8, "cm"),
+         )
+
+# svg(filename = "../figures/Pp.clusters.svg", width = 3.625, height = 8)
+pdf(file = "gene_expression/figures/Pp.clusters.pdf", width = 4, height = 5)
+draw(ht.Pp.clusters, heatmap_height = unit(7.5, "cm"), heatmap_legend_side = "bottom",  padding = unit(c(0, 0, 0, 0.5), "cm"))
+# decorate_row_title("scaled_TPM",{
+#     grid.text("B", y = unit(1.6, "npc") , x = unit(0, "npc"), just = "left", gp = gpar(fontsize = 22)) })
+
+dev.off()
+
+
+```
+
+# Lab Cohort
+### Create DESeq objects
+```{r create_dds Lab_cross}
+
+# Create full DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = countMatrix_L,
+                              colData = sdat_L,
+                              design = ~ treatment + tissue)
+### Remove genes counted zero times
+dds <- dds[ rowSums(counts(dds)) > 0, ]
+
+```
+
+## Outlier detection
+```{r outlier detection}
+
+# GLM PCA
+gpca <- glmpca(counts(dds), L=2)
+gpca.dat <- gpca$factors
+gpca.dat$Sample <- dds$animal_ID
+gpca.dat$Treatment <- dds$treatment
+gpca.dat$tissue <- dds$tissue
+
+pglmpca <- ggplot(gpca.dat, aes(x = dim1, y = dim2, color = Treatment, label = Sample, shape = tissue)) +
+  geom_point(size =3,) + coord_fixed() +   
+  ggtitle("glmpca - Generalized PCA, ")
+pglmpca
+
+# One of the 7 day hypoxia samples is an outlier
+
+poisd <- PoissonDistance(t(counts(dds)))
+samplePoisDistMatrix <- as.matrix(poisd$dd)
+colnames(samplePoisDistMatrix) <- rownames(colData(dds))
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+pheatmap(samplePoisDistMatrix,
+         clustering_distance_rows = poisd$dd,
+         clustering_distance_cols = poisd$dd,
+         col = colors)
+
+# AC163A seems like an outlier in pca but groups with other control samples in correlation. I will maintain
+```
+
+```{r subset count data for TS analysis Lab_cross}
+
+dir.create(paste0('gene_expression/data/','Lab_PlPed_vs_Abd'))
+
+sdat1 <- sdat0 %>%
+  mutate(group = sdat0$tissue,
+         group = gsub("A", "Abdominal_ganglion", group),
+         group = gsub("Pp", "PleuralPedal_ganglia", group),
+         sample = sdat0$sample_ID) %>%
+  mutate(timepoint = sdat0$treatment,
+         timepoint = gsub("Control", 0, timepoint),
+         timepoint = gsub("Hyp_T2h", 1, timepoint),
+         timepoint = gsub("Hyp_T6h", 2, timepoint),
+         timepoint = gsub("Reox", 3, timepoint),
+         timepoint = gsub("LtH_6", 4, timepoint),
+         timepoint = gsub("LtH_7", 5, timepoint),
+         timepoint = gsub("Recovery", 6, timepoint)) %>%
+  filter(batch == "Lab_cross") %>%
+  group_by(group, timepoint) %>%
+  mutate(group_initials = case_when(
+           group == "Abdominal_ganglion" ~ "AG",
+           group == "PleuralPedal_ganglia" ~ "PpG"),
+         replicate = paste0(group_initials, "_", row_number())) %>%
+  ungroup() %>%
+  dplyr::select(sample, replicate, timepoint, group, treatment)
+write_csv(sdat1, "gene_expression/data/Lab_PlPed_vs_Abd/sample_meta.csv")
+  
+
+# Directory where files will be saved
+dir.create(paste0('gene_expression/data/','Lab_PlPed_vs_Abd/counts'))
+output_dir <- "/gene_expression/data/Lab_PlPed_vs_Abd/counts/"  # Specify your directory
+
+# Loop through each sample (column) in the matrix
+for (sample in colnames(countMatrix[,sdat1$sample])) {
+  # Subset the matrix to get the data for the current sample (column)
+  sample_data <- countMatrix[, sample, drop = FALSE]
+  # Save the sample data to a tab-delimited file
+  write.table(sample_data, file = paste0(getwd(),output_dir, sample, ".counts"), sep = "\t", col.names = FALSE, quote = FALSE)
+}
+
+```
+
+```{r pipeline for DE and clustering PluralvsAbdominal_lab}
+
+#Give names to saved object and name of results repository
+dir.create('gene_expression/output/TS_output')
+dir.create('gene_expression/output/TS_output/Lab_PlPed_vs_Abd')
+name_result_folder<-'gene_expression/output/TS_output/Lab_PlPed_vs_Abd/'
+obj_name<-'timeSeries_obj_Lab_PlPed_vs_Abd.Rdata'
+
+graphic_vector<-c("#e31a1c","#1f78b4") #Pre-set colors for the groups
+names(graphic_vector)<-c('PleuralPedal_ganglia','Abdominal_ganglion')
+
+# Object creation -------------------
+TS_object <- new('TimeSeries_Object',
+                 group_names=c('PleuralPedal_ganglia','Abdominal_ganglion'),group_colors=graphic_vector,
+                 DE_method='DESeq2',DE_p_filter='padj',DE_p_thresh=0.05,
+                 DE_l2fc_thresh=0,PART_l2fc_thresh=5,sem_sim_org='org.Hs.eg.db',Gpro_org='hsapiens')
+
+TS_object <- add_experiment_data(TS_object,
+                                        sample_dta_path="gene_expression/data/Lab_PlPed_vs_Abd/sample_meta.csv",
+                                        count_dta_path="gene_expression/data/Lab_PlPed_vs_Abd/counts/")
+TS_object <- add_semantic_similarity_data(TS_object,"BP")
+
+# DESeq2 -------------------
+TS_object <- normalize_timeSeries_with_deseq2(time_object=TS_object)
+#Perform conditional differential gene expression analysis
+TS_object<-conditional_DE_wrapper(TS_object)
+#Perform temporal differential gene expression analysis
+TS_object<-temporal_DE_wrapper(TS_object,do_all_combinations=TRUE)
+
+# Subset temporal comparisons to only relevant ones
+temp_to_keep <- c("TP_1_vs_TP_0", "TP_2_vs_TP_0", "TP_4_vs_TP_0", "TP_5_vs_TP_0", "TP_3_vs_TP_2", "TP_6_vs_TP_2")
+TS_object@DE_results$temporal <- TS_object@DE_results$temporal[temp_to_keep]
+
+# PART -------------------
+#Extract genes for PART clustering based on defined log(2)foldChange threshold
+signi_genes<-select_genes_with_l2fc(TS_object)
+
+sample_data<-exp_sample_data(TS_object)
+#Use all samples, but implement a custom order. In this case it is reversed
+samps_2<-sample_data$sample[sample_data$group==TS_object@group_names[2]]
+samps_1<-sample_data$sample[sample_data$group==TS_object@group_names[1]]
+
+#Create the matrix that will be used for PART clustering
+TS_object<-prep_counts_for_PART(object=TS_object,target_genes=signi_genes,
+                                scale=TRUE,target_samples=c(samps_2,samps_1))
+
+#Sets a seed for reproducibility
+set.seed('123456')
+
+
+TS_object<-compute_PART(TS_object,part_recursion=120,part_min_clust=50,
+                        custom_seed=123456,dist_param="euclidean", hclust_param="average")
+
+# Gprofiler -------------------
+TS_object<-run_gprofiler_PART_clusters(TS_object) #Run the gprofiler analysis with modified function to get human orthologs 
+
+# PCA -------------------
+TS_pca<-plot_PCA_TS(TS_object,DE_type='all')
+ggsave(paste0(name_result_folder,"PCA_plot.png"),dpi=300,width=21, height=19, units='cm',plot=TS_pca)
+
+# DESeq2 results -------------------
+#Set genes of interest (optional) - can be left as c()
+genes_of_interest <- c('LOC101850742','LOC101857241','LOC101857709','LOC101851246','LOC101857475','LOC101849091', "COX1","ND6","ND5","ND1","NDL4","CYTB","COX2","ATP8","ATP6","ND3","ND4","COX3","ND2")
+#Run wrappers twice once for conditional and another for temporal
+plot_wrapper_DE_results(object=TS_object,DE_type='conditional',genes_of_interest=genes_of_interest,results_folder=name_result_folder)
+plot_wrapper_DE_results(object=TS_object,DE_type='temporal',genes_of_interest=genes_of_interest,results_folder=name_result_folder)
+
+# PART results -------------------
+dir.create(paste0(name_result_folder,'PART_results')) #create the directory to store results
+PART_heat_map(TS_object,paste0(name_result_folder,'PART_results/PART_heat')) #Create a summary heatmap
+ts_data<-calculate_cluster_traj_data(TS_object,scale_feat=TRUE) #Calculate scaled gene values for genes of clusters
+mean_ts_data<-calculate_mean_cluster_traj(ts_data) #Calculate the mean scaled values for each cluster
+
+#Function which determines the number of SVG files to plot all cluster trajectories
+wrapper_cluster_trajectory(TS_object,ts_data,mean_ts_data,yaxis_name='scaled mean counts',log_TP=F,plot_name=paste0(name_result_folder,'/PART_results/Ctraj'))
+
+# Gprofiler results -------------------
+#Create standard gprofiler results
+
+gpro_res<-gprofiler_cluster_analysis(TS_object,'All',save_path = name_result_folder)
+GO_clusters<-gpro_res[['GO_df']]
+sem_dta<-slot(TS_object,'sem_list')
+found_clusters<-find_clusters_from_termdist(GO_clusters,sem_dta)
+
+#Plot and save MDS and clustered MDS
+MDS_plots<-wrapper_MDS_and_MDS_clusters(GO_clusters,sem_dta,'BP',target_dir=paste0(name_result_folder,'gprofiler_results/'),return_plot=TRUE)
+
+#Create dotplots
+GO_dotplot_wrapper(TS_object,file_loc=name_result_folder,target_ontology='GO:BP',top_n=10,custom_width=10)
+GO_dotplot_wrapper(TS_object,file_loc=name_result_folder,target_ontology='GO:MF',top_n=10,custom_width=10)
+GO_dotplot_wrapper(TS_object,file_loc=name_result_folder,target_ontology='GO:CC',top_n=10,custom_width=10)
+
+# Ancestor queries results -------------------
+ancestor_list <- c("GO:0001666","GO:0071456","GO:0002250","GO:0002376","GO:0002283","GO:0002252", "GO:0002684","GO:0008152","GO:0006950","GO:0030324","GO:0042990","GO:0006950","GO:0007610","GO:0008285","GO:0043522","GO:0010467","GO:0001501")
+GOs_ancestors_clust<-find_relation_to_ancestors(target_ancestors=ancestor_list,GOs_to_check=GO_clusters,ontology = 'BP')
+ancestor_plots<-wrapper_ancestor_curation_plots(GOs_ancestors_clust,sem_dta,return_plot=TRUE,target_dir=name_result_folder)
+
+save(TS_object,file=paste0(name_result_folder,obj_name))
+
+```
+
+## DE analysis for each ganglia
+```{r create_dds again Lab}
+sdat_L <- sdat_L %>%
+  mutate(tissue.group = interaction(tissue, treatment)) %>%
+  mutate_if(is.character, as.factor)
+
+# Create full DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = countMatrix_L,
+                              colData = sdat_L,
+                              design = ~ treatment + tissue)
+### Remove genes with low counts
+dds <- dds[ rowSums(counts(dds)) > 1, ]
+
+# Run DESeq pipeline
+design(dds) <- formula(~ tissue.group)
+dsr1 <- DESeq(dds)
+
+# Define group contrasts
+group.contrasts <- tibble(num = c("Hyp_T2h","Hyp_T6h","LtH_6","LtH_7","Reox","Recovery",
+                                  "Hyp_T6h","Reox","Recovery","Reox","LtH_6","LtH_7"),
+                          den = c("Control","Control","Control","Control","Control","Control",
+                                  "Hyp_T2h","Hyp_T6h","Hyp_T6h","Recovery","Hyp_T6h","Hyp_T6h"))
+
+# Get DESeq results for all group contrasts for each batch
+DE <- tidyr::crossing(tissue = c("A", "Pp"), group.contrasts) %>%
+  mutate(dsr = pmap(list(tissue, num, den), function(x, y, z) {
+    results(dsr1, contrast = c("tissue.group", paste0(x, ".", c(y, z))))}))
+
+#Then, run model with no separation between batches
+
+# Run DESeq pipeline 
+design(dds) <- formula(~ treatment)
+dsr2 <- DESeq(dds)
+
+# Get DESeq results for all contrasts and join with results from each batch, from above
+DE <- tidyr::crossing(batch = "all", group.contrasts) %>%
+  mutate(dsr = map2(num, den, ~ results(dsr2, contrast = c("treatment", .x, .y)))) %>%
+  bind_rows(DE)
+```
+
+### Get significant DEGs
+```{r get_DEgenes Abdominal all Lab}
+DE <- DE %>%
+  mutate(sig = map(dsr, ~ rownames_to_column(data.frame(.[which(.$padj < 0.05), ]), "gene")),
+          up = map(sig, ~ filter(., log2FoldChange > 0)),
+        down = map(sig, ~ filter(., log2FoldChange < 0)),
+        full = map(dsr, ~ rownames_to_column(data.frame(.), "gene"))) 
+
+# Generate logP values for all differential expression contrasts
+DE <- DE %>% mutate(logP = map(dsr, ~ data.frame(
+  gene = rownames(data.frame(.)),
+  logP = -log10(data.frame(.)$pvalue) * sign(data.frame(.)$log2FoldChange))))
+
+# Count number of differentially expressed genes within each batch, and overall, for each contrast
+DE_tab <- DE %>%
+  filter((num == "Hyp_T2h" & den == "Control")|(num == "Hyp_T6h" & den == "Control")|
+         (num == "LtH_6" & den == "Control")|(num == "LtH_7" & den == "Control")|
+         (num == "Reox" & den == "Control")|(num == "Recovery" & den == "Control")|
+         (num == "Hyp_T6h" & den == "Hyp_T2h")|(num == "Reox" & den == "Hyp_T6h")|
+         (num == "Recovery" & den == "Hyp_T6h")|(num == "Reox" & den == "Recovery")|
+         (num == "LtH_6" & den == "Hyp_T6h")|(num == "LtH_7" & den == "Hyp_T6h")) %>%
+  mutate(nsig = map_dbl( sig, ~ nrow(.)),
+          nup = map_dbl(  up, ~ nrow(.)),
+          ndn = map_dbl(down, ~ nrow(.)),
+          `DEGs [up, down]` = paste0(nsig, " [", nup, ", ", ndn, "]")) %>%
+  mutate(ganglia = case_when(tissue == "A" ~ "abdominal", tissue == "Pp" ~ "pleural/pedal", 
+                           tissue == "all" ~ "all ganglia")) %>%
+  mutate(ganglia = factor(ganglia, levels = c("abdominal", "pleural/pedal", "all ganglia"))) %>%
+  dplyr::select(ganglia, num, den, `DEGs [up, down]`) %>%
+  spread(ganglia, `DEGs [up, down]`)
+
+DE_tab$contrast <- paste(DE_tab$num, DE_tab$den, sep = " vs ")
+dek <- DE_tab %>% dplyr::select(c(6,3:5)) %>%
+  knitr::kable(format = "markdown", caption = "Number of differentially expressed genes per ganglia and across all ganglia for each specified contrast. DEGs identified using DESeq with an adjusted p-value < 0.05. In brackets are the numbers of significantly up- and down-regulated genes.", row.names = )
+
+dek
+```
+
+```{r export complete matrix with DE results for CtrlvsHypoxia contrasts Lab}
+DE %>%
+  unnest(full) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(., gene, log2FoldChange, padj, contrast) %>%
+  write_csv(., file = "gene_expression/output/DE_lab/Abdominal/DE_raw_data.csv")
+
+DE %>%
+  unnest(full) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(., gene, log2FoldChange, padj, contrast) %>%
+  write_csv(., file = "gene_expression/output/DE_lab/Pleural/DE_raw_data.csv")
+
+res_A <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(.,contrast, gene, log2FoldChange)
+write_csv(res_A, file = "gene_expression/output/DE_lab/Abdominal/DE_sig_data.csv")
+
+res_Pp <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(.,contrast, gene, log2FoldChange)
+write_csv(res_A, file = "gene_expression/output/DE_lab/Pleural/DE_sig_data.csv")
+```
+
+
+```{r plot DEG results Lab}
+DEGs_A <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  dplyr::select(.,contrast, gene)
+DEGs_A_wide <- list(Hyp_T2h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control"),2]),
+                 Hyp_T6h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control"),2]),
+                 Hyp_T6d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_6.Control"),2]),
+                 Hyp_T7d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_7.Control"),2]))
+str(DEGs_A_wide)
+gv3 <- ggvenn(DEGs_A_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv3
+ggsave("gene_expression/output/DE_lab/Abdominal/DEGs_vennDiagram.png", gv3, height = 3, width = 5)
+
+DEGs_Pp <- DE %>%
+  unnest(sig) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  dplyr::select(.,contrast, gene)
+DEGs_Pp_wide <- list(Hyp_T2h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T2h.Control"),2]),
+                 Hyp_T6h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T6h.Control"),2]),
+                 Hyp_T6d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_6.Control"),2]),
+                 Hyp_T7d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_7.Control"),2]))
+str(DEGs_Pp_wide)
+gv2 <- ggvenn(DEGs_Pp_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv2
+ggsave("gene_expression/output/DE_lab/Pleural/DEGs_vennDiagram.png", gv2, height = 3, width = 5)
+
+
+DEGs_wild <- DE %>%
+  unnest(sig) %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
+  dplyr::select(.,contrast, gene, tissue)
+DEGs_wild_wide <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A"),2]),
+                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp"),2]))
+str(DEGs_wild_wide)
+gv3 <- ggvenn(DEGs_wild_wide, fill_color = c("#0073C2FF", "#EFC000FF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv3
+ggsave("gene_expression/output/DE_lab/DEGs_Lab_by_tissue_vennDiagram.png", gv3, height = 3, width = 5)
+
+volcano_plots_A <- DE %>%
+  unnest(full) %>%
+  filter(tissue == "A") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(gene, log2FoldChange, padj, contrast) %>%
+  group_by(contrast) %>%  # Group by contrast
+  nest() %>%             # Nest data for each contrast
+  mutate(plots = map2(data, contrast, ~ volcanoplot_alt(.x, plot_title=.y))) 
+
+# View the plots
+volcano_plots_A$plots
+
+# Save all plots to files
+volcano_plots_A %>%
+  mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_Lab/Abdominal/",.y, "_volcano.png"), plot = .x)))
+
+volcano_plots_Pp <- DE %>%
+  unnest(full) %>%
+  filter(tissue == "Pp") %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", 
+                         "LtH_6.Control", "LtH_7.Control", 
+                         "Reox.Hyp_T6h", "Reox.Control",
+                         "Recovery.Hyp_T6h", "Recovery.Control")) %>%
+  dplyr::select(gene, log2FoldChange, padj, contrast) %>%
+  group_by(contrast) %>%  # Group by contrast
+  nest() %>%             # Nest data for each contrast
+  mutate(plots = map2(data, contrast, ~ volcanoplot_alt(.x, plot_title=.y))) 
+
+# View the plots
+volcano_plots_Pp$plots
+
+# Save all plots to files
+volcano_plots_Pp %>%
+  mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_Lab/Pleural/",.y, "_volcano.png"), plot = .x)))
+```
+
+## Clustering for temporal analysis
+
+```{r cluster transcriptional profiles Lab, echo=FALSE, message=FALSE, warning = FALSE} 
+
+DEGs_lab <- DE %>%
+  unnest(sig) %>%
+  mutate(contrast = paste(num, den, sep = ".")) %>%
+  filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
+  dplyr::select(.,contrast, gene, tissue, log2FoldChange) %>%
+  filter(abs(log2FoldChange) >= 0)
+DEGs_lab_wide <- list(abdominal=pull(DEGs_lab[which(DEGs_lab$tissue=="A"),2]),
+                 pleural=pull(DEGs_lab[which(DEGs_lab$tissue=="Pp"),2]))
+
+cds <- DESeqDataSetFromMatrix(countMatrix_L, sdat_L, design = ~tissue.group)
+cds <- cds[ rowMeans(counts(cds)) > 1, ]
+dds <- estimateSizeFactors(cds)
+normalized_counts <- counts(dds, normalized=TRUE)
+
+normalized_L2 <- log2(normalized_counts+1)
+
+# use all DEGs for temporal contrasts
+res_patterns_A <- DEGreport::degPatterns(
+  ma = normalized_L2[rownames(normalized_L2) %in% DEGs_lab_wide$abdominal, rownames(sdat_L)],
+  metadata = data.frame(time = sdat_L$treatment, row.names = rownames(sdat_L), Tissue = sdat_L$tissue),
+  reduce = TRUE,
+  minc = 70,
+  col = "Tissue",
+  groupDifference = 0.58
+)
+
+res.A_clusters <- res_patterns_A$df
+res.A_patterns <- res_patterns_A$normalized
+save(res.A_clusters,res.A_patterns, file ="gene_expression/data/Lab_clusters_A.R")
+
+res_patterns_Pp <- DEGreport::degPatterns(
+  ma = normalized_L2[rownames(normalized_L2) %in% DEGs_lab_wide$pleural, rownames(sdat_L)],
+  metadata = data.frame(time = sdat_L$treatment, row.names = rownames(sdat_L),
+                        Tissue = sdat_L$tissue), 
+  reduce = TRUE,
+  minc = 50,
+  col = "Tissue",
+  groupDifference = 0.58)
+
+res.Pp_clusters <- res_patterns_Pp$df
+res.Pp_patterns <- res_patterns_Pp$normalized
+save(res.Pp_clusters,res.Pp_patterns, file ="gene_expression/data/Lab_clusters_Pp.R")
+```
+
+###label clusters
+```{r}
+
+library(ComplexHeatmap)
+
+load("gene_expression/data/Lab_clusters_A.R")
+load("gene_expression/data/Lab_clusters_Pp.R")
+
+###A heatmap 
+A.norm <- res.A_patterns %>% 
+  filter(.,Tissue == "A") %>%
+  dplyr::select(genes, time, value, cluster) %>% 
+  tidyr::spread(time, value) %>% column_to_rownames("genes")
+A.norm[A.norm$cluster == 6,]$cluster <- "A1"
+A.norm[A.norm$cluster == 11,]$cluster <- "A2"
+A.norm[A.norm$cluster == 12,]$cluster <- "A3"
+A.norm[A.norm$cluster == 15,]$cluster <- "A7"
+A.norm[A.norm$cluster == 17,]$cluster <- "A8"
+A.norm[A.norm$cluster == 53,]$cluster <- "A9"
+A.norm[A.norm$cluster == 61,]$cluster <- "A4"
+A.norm[A.norm$cluster == 73,]$cluster <- "A10"
+A.norm[A.norm$cluster == 74,]$cluster <- "A5"
+A.norm[A.norm$cluster == 88,]$cluster <- "A6"
+A.norm[A.norm$cluster == 100,]$cluster <- "A11"
+A.norm[A.norm$cluster == 114,]$cluster <- "A12"
+A.norm <- A.norm[c(1:4,8,5:7)]
+
+# A1-A6 Up, A7-A9 Down 
+
+A_clust_UP <- c("A1","A2","A3","A4","A5","A6")
+A_clust_DOWN <- c("A7","A8","A9","A10","A11","A12","A13")
+
+A_clust <- c(
+  "6" = "A1",
+  "11" = "A2",
+  "12" = "A3",
+  "15" = "A7",
+  "17" = "A8",
+  "53" = "A9",
+  "61" = "A4",
+  "73" = "A10",
+  "74" = "A5",
+  "88" = "A6",
+  "100" = "A11",
+  "114" = "A12"
+  )
+
+res.A_patterns$clust <- factor(A_clust[as.character(res.A_patterns$cluster)], levels = c("A1","A2","A3","A4","A5",
+                                                                                      "A6","A7","A8","A9","A10",
+                                                                                      "A11","A12"),
+                               ordered = T)
+A.norm$cluster <- factor(A.norm$cluster, levels = c("A1","A2","A3","A4","A5","A6","A7","A8","A9","A10","A11","A12"), ordered = T)
+res.A_clusters$clust <- factor(A_clust[as.character(res.A_clusters$cluster)], levels = c("A1","A2","A3","A4","A5","A6","A7","A8","A9","A10","A11","A12"), ordered = T)
+res.A_clusters <- res.A_clusters %>% mutate( direction = 
+                               ifelse(clust %in% c("A7","A8","A9","A10","A11","A12"), "DOWN","UP")
+                               ) 
+
+A_clusters <- split(res.A_clusters, f = res.A_clusters$clust)
+names(A_clusters) <- unique(res.A_clusters$clust)
+
+###Pp heatmap 
+Pp.norm <- res.Pp_patterns %>% 
+  filter(.,Tissue == "Pp") %>%
+  dplyr::select(genes, time, value, cluster) %>% 
+  tidyr::spread(time, value) %>% column_to_rownames("genes")
+Pp.norm[Pp.norm$cluster == 3,]$cluster <- "P5"
+Pp.norm[Pp.norm$cluster == 4,]$cluster <- "P4"
+Pp.norm[Pp.norm$cluster == 18,]$cluster <- "P1"
+Pp.norm[Pp.norm$cluster == 29,]$cluster <- "P2"
+Pp.norm[Pp.norm$cluster == 32,]$cluster <- "P3"
+Pp.norm <- Pp.norm[c(1:4,8,5:7)]
+
+#P1 P2 Up
+
+Pp_clust <- c(
+  "3" = "P5",
+  "4" = "P4",
+  "18" = "P1",
+  "29" = "P2",
+  "32" = "P3"
+)
+
+res.Pp_patterns$clust <- Pp_clust[as.character(res.Pp_patterns$cluster)]
+res.Pp_clusters$clust <- Pp_clust[as.character(res.Pp_clusters$cluster)]
+res.Pp_clusters <- res.Pp_clusters %>% mutate( direction = 
+                               ifelse(clust %in% c("P5", "P4"),"DOWN", "UP")
+                               ) 
+Pp_clusters <- split(res.Pp_clusters, f = res.Pp_clusters$clust)
+names(Pp_clusters) <- unique(res.Pp_clusters$clust)
+
+```
+
+
+
+### heatmap for clusters 
+```{r A heatmap,fig.width= 3.54, fig.height=8}
+
+panel_fun = function(index) {
+  pushViewport(viewport(xscale = c(1,8), yscale = c(-2, 2)))
+  grid.rect()
+  #lines for each contributing gene
+  # for(i in seq_along(index)) {
+  #   grid.lines(x = (c(7:11,11.95)-6.5)/6,y = (as.vector(A.norm[index[i],2:7])+2)/4, gp = gpar(col = "lightgrey"))
+  # }
+  #95% CI lines
+  grid.polygon(x = c( (c(6:12)-6)/6, rev(c(6:11,12)-6)/6),
+                 y = c(
+                   ( colMeans(A.norm[index,2:8]) + 1.96 * colSds(as.matrix(A.norm[index,2:8]))+2)/4,
+                 rev(( colMeans(A.norm[index,2:8]) - 1.96 * colSds(as.matrix(A.norm[index,2:8]))+2)/4)
+                 ),
+                 gp = gpar(fill = "lightgrey", col = 0))
+  # grid.lines(x = (c(7:11,11.95)-6.5)/6,
+  #            y = ( colMeans(A.norm[index,2:7]) + 1.96 * colSds(as.matrix(A.norm[index,2:7]))+2)/4,
+  #            gp = gpar(col = "black", lty = 2, lwd = 2))
+  # grid.lines(x = (c(7:11,11.95)-6.5)/6,
+  #            y = ( colMeans(A.norm[index,2:7]) - 1.96 * colSds(as.matrix(A.norm[index,2:7]))+2)/4,
+  #            gp = gpar(col = "black", lty = 2, lwd = 2))
+  #eigen-trajectory
+  grid.lines(x = (c(6:11,11.95)-6)/6,y = (as.vector(colMeans(A.norm[index,2:8]))+2)/4, gp = gpar(col = "red", lwd = 2))
+  #genes in cluster
+  grid.text(x = 0.5, y = 0.94, label = paste0("n= ",length(index)), just = "center", gp = gpar(fontsize = 8))
+  #axes
+  if(length(index) == 163) grid.xaxis(gp = gpar(fontsize = 8))
+  grid.yaxis(gp = gpar(fontsize = 8), main = FALSE)
+  popViewport()
+}
+
+
+
+anno = anno_zoom(align_to = A.norm$cluster, 
+                 which = "row", 
+                 panel_fun = panel_fun, 
+                 size = 0.3, 
+                 gap = unit(0.3,"cm"), 
+                 width = unit(4, "cm"),
+                 link_width = unit(1,"cm"))
+
+ht.A.clusters <- Heatmap( matrix = A.norm[,2:8],
+                            name = "scaled TPM",
+                            cluster_rows = FALSE,
+                            cluster_row_slices = FALSE,
+                            cluster_columns = FALSE,
+                            show_row_names = FALSE,
+                            column_names_side = "top",
+                            column_names_centered = TRUE,
+                            column_names_rot = 90,
+                            column_names_gp = gpar(fontsize = 8),
+                            #width = unit(3, "cm"),
+                            row_split = A.norm$cluster,
+                            row_title_rot = 0,
+                            #column_title = "Treatment",
+         right_annotation = rowAnnotation(cluster = anno),
+         show_heatmap_legend = FALSE,
+         heatmap_legend_param = list(legend_direction = "horizontal", 
+                                                    title_position = "topcenter"),
+         heatmap_width = unit(8, "cm")
+         )
+
+# svg(filename = "../figures/A.clusters.svg", width = 3.625, height = 8)
+#pdf(file = "gene_expression/figures/Lab_A.clusters.pdf", width = 4, height = 8)
+draw(ht.A.clusters, heatmap_height = unit(19.5, "cm"), heatmap_legend_side = "bottom",  padding = unit(c(0, 0, 0, 0.5), "cm"))
+
+# decorate_row_title("scaled TPM",{
+#     grid.text("A", y = unit(1.8, "npc") , x = unit(0, "npc"), just = "left", gp = gpar(fontsize = 22)) })
+#dev.off()
+
+
+```
+
+
+```{r Pp heatmap,fig.width= 3.54, fig.height=6}
+
+panel_fun = function(index) {
+  pushViewport(viewport(xscale = c(1,8), yscale = c(-2, 2)))
+  grid.rect()
+  #lines for each contributing gene
+  # for(i in seq_along(index)) {
+  #   grid.lines(x = (c(7:11,11.95)-6.5)/6,y = (as.vector(Pp.norm[index[i],2:7])+2)/4, gp = gpar(col = "lightgrey"))
+  # }
+  #95% CI lines
+  grid.polygon(x = c( (c(6:12)-6)/6, rev(c(6:11,12)-6)/6),
+                 y = c(
+                   ( colMeans(Pp.norm[index,2:8]) + 1.96 * colSds(as.matrix(Pp.norm[index,2:8]))+2)/4,
+                 rev(( colMeans(Pp.norm[index,2:8]) - 1.96 * colSds(as.matrix(Pp.norm[index,2:8]))+2)/4)
+                 ),
+                 gp = gpar(fill = "lightgrey", col = 0))
+  # grid.lines(x = (c(7:11,11.95)-6.5)/6,
+  #            y = ( colMeans(Pp.norm[index,2:7]) + 1.96 * colSds(as.matrix(Pp.norm[index,2:7]))+2)/4,
+  #            gp = gpar(col = "black", lty = 2, lwd = 2))
+  # grid.lines(x = (c(7:11,11.95)-6.5)/6,
+  #            y = ( colMeans(Pp.norm[index,2:7]) - 1.96 * colSds(as.matrix(Pp.norm[index,2:7]))+2)/4,
+  #            gp = gpar(col = "black", lty = 2, lwd = 2))
+  #eigen-trajectory
+  grid.lines(x = (c(6:11,11.95)-6)/6,y = (as.vector(colMeans(Pp.norm[index,2:8]))+2)/4, gp = gpar(col = "red", lwd = 2))
+  #genes in cluster
+  grid.text(x = 0.5, y = 0.94, label = paste0("n= ",length(index)), just = "center", gp = gpar(fontsize = 8))
+  #axes
+  if(length(index) == 163) grid.xaxis(gp = gpar(fontsize = 8))
+  grid.yaxis(gp = gpar(fontsize = 8), main = FALSE)
+  popViewport()
+}
+
+anno = anno_zoom(align_to = Pp.norm$cluster, 
+                 which = "row", 
+                 panel_fun = panel_fun, 
+                 size = 0.3, 
+                 gap = unit(0.3,"cm"), 
+                 width = unit(4, "cm"),
+                 link_width = unit(1,"cm"))
+
+
+ht.Pp.clusters <- Heatmap( matrix = Pp.norm[,2:8],
+         name = "scaled_TPM",
+         cluster_rows = FALSE,
+         cluster_row_slices = FALSE,
+         cluster_columns = FALSE,
+         show_row_names = FALSE,
+         column_names_side = "bottom",
+         column_names_centered = TRUE,
+         column_names_rot = 90,
+         column_names_gp = gpar(fontsize = 8),
+         #width = unit(3, "cm"),
+         row_split = Pp.norm$cluster,
+         row_title_rot = 0,
+         #column_title = "Treatment",
+         right_annotation = rowAnnotation(cluster = anno),
+         show_heatmap_legend = FALSE,
+         heatmap_legend_param = list(legend_direction = "horizontal", 
+                                                    title_position = "topcenter"),
+         heatmap_width = unit(7.8, "cm"),
+         )
+
+# svg(filename = "../figures/Pp.clusters.svg", width = 3.625, height = 8)
+#pdf(file = "gene_expression/figures/Lab_Pp.clusters.pdf", width = 4, height = 5)
+draw(ht.Pp.clusters, heatmap_height = unit(7.5, "cm"), heatmap_legend_side = "bottom",  padding = unit(c(0, 0, 0, 0.5), "cm"))
+# decorate_row_title("scaled_TPM",{
+#     grid.text("B", y = unit(1.6, "npc") , x = unit(0, "npc"), just = "left", gp = gpar(fontsize = 22)) })
+
+#dev.off()
+
+
+```
