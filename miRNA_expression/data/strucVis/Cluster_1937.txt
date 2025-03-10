@@ -1,0 +1,15 @@
+Genome: /scratch/jeirinlo/jrodr979/Aplysia_trans_WGBS/AplCal3.0_genome/unplaced.scaf.fa
+Alignments: /scratch/jeirinlo/jrodr979/miRNA_aplysia_hypoxia/20230317_shortstack_annot/20230320_Trimmed_Files_alignments/merged_alignments.bam
+Location: NW_004797662.1:469595-469689 minus
+Post-script file name: /scratch/jeirinlo/jrodr979/miRNA_aplysia_hypoxia/20230317_shortstack_annot/20230320_Trimmed_Files_alignments/strucVis/Cluster_1937.ps
+Locus Name: Cluster_1937
+GGCCUGGGGCUGUCAUGAGGAGUAAGUUGAUGGGGUCCCAGGAGGAAAGAAACCCGGGACUACUUCAACUACUUGCUUGUGGGAGCCUCGGUCGA
+((((.((((((.((((((((((((.(((((.(.((((((.((.(........))))))))).).)))))))))).))))))).)))))))))).. (-49.00)
+....................AGUAAGUUGAUGGGGUCaCAGG..................................................... len:22 al:1
+....................AGUAAGUUGAUGGGGUCCCAGG..................................................... len:22 al:4
+....................AGUuAGUUGAUGGGGUCCCAGG..................................................... len:22 al:1
+....................AGUAAGUUGAUGGGGUCCCAGGu.................................................... len:23 al:1
+.....................................................CCGGGACUACUUCAACUACU...................... len:20 al:1
+.....................................................CCGGGACUACUUCAACUACUUG.................... len:22 al:4
+......................................................CGGGACUACUUCAACUACUUGC................... len:22 al:3
+......................................................CGGGACUACUUCAACUACUUG.................... len:21 al:1

@@ -31,6 +31,7 @@ library(limma)     # BiocManager::install('limma')
 library(ggpubr)
 library(cowplot)
 library(org.Hs.eg.db)
+library(reshape2)
 
 ```
 
@@ -695,10 +696,111 @@ ancestor_plots<-wrapper_ancestor_curation_plots(GOs_ancestors_clust,sem_dta,retu
 
 save(P_TS_object,file=paste0(name_result_folder,obj_name))
 ```
+
+# Plot trajectories of specific genes
 ```{r}
+calculate_gene_traj_data <- function (time_object, target_gene, log_timepoint = FALSE) 
+{
+    my_dta <- exp_matrix(time_object, "norm")[target_gene, ]
+    DE_method <- slot(time_object, "DE_method")
+    sample_data <- exp_sample_data(time_object) %>%
+      mutate(treatment = gsub("LtH_6", "Hyp_5d", treatment),
+             treatment = gsub("LtH_7", "Hyp_6d", treatment),
+             treatment = gsub("Hyp_T2h", "Hyp_2h", treatment),
+             treatment = gsub("Hyp_T6h", "Hyp_6h", treatment))
+    my_dta <- melt(my_dta, id.vars = NULL)
+    my_dta$sample <- row.names(my_dta)
+    if (DE_method == "limma") {
+        colnames(my_dta) = c("reads", "sample")
+    }
+    else {
+        colnames(my_dta) = c("sample", "reads")
+    }
+    my_dta <- merge(my_dta, sample_data, by = "sample")
+    #mean_data_list <- list()
+    #for (group in unique(my_dta$group)) {
+    #    for (tp in unique(my_dta$timepoint)) {
+    #        new_val = mean(my_dta$reads[my_dta$group == group & 
+    #            my_dta$timepoint == tp])
+    #        mean_data_list[["reads"]] <- c(mean_data_list[["reads"]], 
+    #            new_val)
+    #        mean_data_list[["timepoint"]] <- c(mean_data_list[["timepoint"]], 
+    #            tp)
+    #        mean_data_list[["label"]] <- c(mean_data_list[["label"]], 
+    #            target_gene)
+    #        mean_data_list[["group"]] <- c(mean_data_list[["group"]], 
+    #            group)
+    #    }
+    #}
+    mean_data <- as.data.frame(my_dta) %>%
+        dplyr::select(reads, timepoint, group, treatment)
+    mean_data$label = target_gene
+    mean_data$timepoint <- as.factor(mean_data$timepoint)
+     mean_data$group <- as.factor(mean_data$group)
+    if (log_timepoint == TRUE) {
+        mean_data$log10_timepoint <- log10(mean_data$timepoint)
+        mean_data$log10_timepoint[mean_data$log10_timepoint == 
+            "-Inf"] <- 0
+    }
+    return(mean_data)
+}
+plot_single_gene_traj <- function (mean_data, color_vector = NULL) 
+{
+    if (is.null(color_vector) == TRUE) {
+        color_vector <- c("#e31a1c", "#1f78b4")
+        names(color_vector) = c("Activated", "Control")
+    }
+    if ("log10_timepoint" %in% colnames(mean_data)) {
+        plt <- ggplot(mean_data, aes(x = log10_timepoint, y = reads, 
+            color = group)) + geom_smooth(aes(x = log10_timepoint), 
+            lwd = 1.5, se = FALSE, formula = y ~ x, method = "loess")
+    }
+    else {
+        plt <- ggplot(mean_data, aes(x = treatment, y = reads, fill = group, color = group)) +
+          geom_boxplot() +
+          scale_x_discrete(limits=c("Control", "Hyp_2h", "Hyp_6h", "Hyp_5d", "Hyp_6d", "Reox", "Recovery")) +
+          geom_smooth(aes(x = treatment),lwd = 1.5, se = FALSE, formula = y ~ x, method = "loess") +
+          stat_compare_means(aes(group = group), label = "p.signif", hide.ns = T, show.legend = F, method = "t.test", vjust = 0.8, size = 10)
+    }
+    plt <- plt + scale_color_manual(values = color_vector) + 
+      geom_point(size = 1) + 
+      facet_wrap(~label, scales = "free_x", ncol = 1) +
+      theme_classic() +
+      theme(axis.text.x = element_text(angle = 25, vjust = 0.7, hjust = 0.8),
+            axis.title.x = element_blank())
+    if (length(unique(mean_data$timepoint)) < 10) {
+        plt <- plt + geom_smooth(aes(group=group))
+    }
+    return(plt)
+}
+
 #Plotting individual genes linked with HPC
 # Abdominal
+load("gene_expression/output/TS_output/LCvsWC_Abdominal/timeSeries_obj_LCvsWC_abdominal.Rdata")
+graphic_vector<-c("#e31a1c","#1f78b4") #Pre-set colors for the groups
+names(graphic_vector)<-c('Lab_cross','Wild_cross')
+
+
 name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Abdominal/'
+#PDK2
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101855986',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101855986", "PDK1 (Abdominal)"))
+pdkA<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+pdkA
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101854603',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101854603", "PDP1 (Abdominal)"))
+pdpA<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+pdpA
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC100533218',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC100533218", "PDK1 (Abdominal)"))
+pdkA<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+pdkA
+
+LOC100533218
+
+
 # Hypoxic response signaling
 gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101850742',log_timepoint=FALSE) %>%
   mutate(across('label', str_replace, "LOC101850742", "HIF-1a (ortho1)"))
@@ -829,10 +931,6 @@ p25<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "n
 p25
 
 
-gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101857902',log_timepoint=FALSE)%>%
-  mutate(across('label', str_replace, "LOC101857902", "TNF (ortho1)"))
-p26<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
-p26
 # Autophagy
 gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101858979',log_timepoint=FALSE) %>%
   mutate(across('label', str_replace, "LOC101858979", "TBC1d15 (ortho1)"))
@@ -860,10 +958,22 @@ gene_traj<- calculate_gene_traj_data(A_TS_object,'LOC101861456',log_timepoint=FA
 p31<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
 p31
 
-ggsave(plot = ggarrange(p1,p2,p3,p4,p30,p19,p20,p21,p6,p7,p8,p10,p11,p13,p14,p16,p17,p22,p24,p25,p26,p28, ncol = 5, nrow = 5, common.legend = T, legend = "bottom"),filename = paste0(name_result_folder,"Interesting_genes_expression.png"),width = 15,height=15)
+ggsave(plot = ggarrange(p1,p2,p3,p4,p30,p19,p20,p21,p6,p7,p8,p10,p11,p13,p14,p16,p17,p22,p24,p25,p27,p28, ncol = 4, nrow = 6, common.legend = T, legend = "bottom"),filename = paste0(name_result_folder,"Interesting_genes_expression.png"),width = 13,height=15)
 
 # Pleural
 name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Pleural/'
+load("gene_expression/output/TS_output/LCvsWC_Pleural/timeSeries_obj_LCvsWC_pleural.Rdata")
+
+#PDK2
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101855986',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101855986", "PDK2 (Pleural/Pedal)"))
+pdkPp<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+pdkPp
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101854603',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101854603", "PDP1 (Pleural/Pedal)"))
+pdpPp<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+pdpPp
 
 # Hypoxic response signaling
 gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101850742',log_timepoint=FALSE) %>%
@@ -995,15 +1105,16 @@ p25<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "n
 p25
 
 
-gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101857902',log_timepoint=FALSE)%>%
-  mutate(across('label', str_replace, "LOC101857902", "TNF (ortho1)"))
-p26<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
-p26
 # Autophagy
 gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101858979',log_timepoint=FALSE) %>%
   mutate(across('label', str_replace, "LOC101858979", "TBC1d15 (ortho1)"))
 p27<-plot_single_gene_traj(gene_traj,graphic_vector) + theme(legend.position = "none")
 p27
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101848114',log_timepoint=FALSE) %>%
+  mutate(across('label', str_replace, "LOC101848114", "Beclin"))
+p27a<-plot_single_gene_traj(gene_traj,graphic_vector) + theme(legend.position = "none")
+p27a
 
 gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101864240',log_timepoint=FALSE) %>%
   mutate(across('label', str_replace, "LOC101864240", "TBC1d15 (ortho2)"))
@@ -1026,6 +1137,134 @@ gene_traj<- calculate_gene_traj_data(P_TS_object,'LOC101861456',log_timepoint=FA
 p31<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
 p31
 
-ggsave(plot = ggarrange(p1,p2,p3,p4,p30,p19,p20,p21,p6,p7,p8,p10,p11,p13,p14,p16,p17,p22,p24,p25,p26,p28, ncol = 8, nrow = 3, common.legend = T),filename = paste0(name_result_folder,"Interesting_genes_expression.png"),width = 25,height=10)
+ggsave(plot = ggarrange(p1,p2,p3,p4,p30,p19,p20,p21,p6,p7,p8,p10,p11,p13,p14,p16,p17,p22,p24,p25,p27,p28, ncol = 4, nrow = 6, common.legend = T),filename = paste0(name_result_folder,"Interesting_genes_expression.png"),width = 13,height=15)
 
+ggsave(plot = ggarrange(pdkA, pdkPp, pdpA, pdpPp, ncol = 2, nrow = 2, common.legend = T, legend = "right"),filename = "gene_expression/figures/PDK2_genes_expression.pdf", width = 8,height=6)
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101863586',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101863586", "NOTCH4"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p 
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101855193',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101855193", "NOTCH4"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p 
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101855168',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101855168", "NOTCH"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101861931',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101861931", "EGLN3"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101863988',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101863988", "PPARG"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p 
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101863579',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101863579", "LONP"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p 
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101863968',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101863968", "HIGD1A (pleural/pedal)"))
+HIG1Pp<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+HIG1Pp 
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101863968',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101863968", "HIGD1A (abdominal)"))
+HIG1A<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+HIG1A
+
+ggsave(plot = ggarrange(HIG1A, HIG1Pp, ncol = 2, nrow = 1, common.legend = T, legend = "right"),filename = "gene_expression/figures/HIGD1A_gene_expression.pdf", width = 8,height=3)
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101855128',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101855128", "DIPK2A"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC106014096',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC106014096", "GHSR"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+#Neuro inhibition
+gene_traj<-calculate_gene_traj_data(A_TS_object,'psc1',log_timepoint=FALSE)
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101850591',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101850591", "Npr1"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101856063',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101856063", "mGluR8"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC106011477',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC106011477", "GRIK2"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC100533293',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC100533293", "GRIK2 (ortho2)"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101860828',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101860828", "GRIK4"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101861597',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101861597", "GRIK3"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101861377',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101861377", "GRIK4"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC100533292',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC100533292", "AMPA1"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101851163',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101851163", "GRIA3"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC100533244',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC100533244", "NMDA2B"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101846202',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101846202", "NMDA2C"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101858681',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101858681", "NRX-1"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(A_TS_object,'LOC101858907',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101858907", "NRX-1a"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+gene_traj<-calculate_gene_traj_data(P_TS_object,'LOC101858681',log_timepoint=FALSE)%>%
+  mutate(across('label', str_replace, "LOC101858681", "NRX-1b"))
+p<-plot_single_gene_traj(gene_traj,graphic_vector)+ theme(legend.position = "none")
+p
+
+LOC101858907
 ```

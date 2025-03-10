@@ -1,0 +1,37 @@
+---
+title: "Viral Load"
+author: "Javier Rodriguez Casariego"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+# Set the working directory to the R project's root folder
+setwd("/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+
+# Ensure the working directory is not reset for each chunk
+knitr::opts_knit$set(root.dir = "/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia")
+knitr::opts_knit$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(ggsignif) 
+library(ggpubr)
+
+virus <- read.csv("phenotype/data/ViralLoad/2023-05-12_AV4_results_meta .csv") %>%
+  mutate(batch = as.factor(Batch)) %>%
+  mutate(group = paste(batch, method, sep = "."))
+  
+
+p1 <- ggplot(virus, aes(x=method, y=log10(Mean.Copy.Number), fill = batch)) +
+  geom_boxplot() + 
+  scale_fill_brewer(palette="Greys",name = "Cohort", labels = c("Naive", "Pre-exposed")) + 
+  labs(x=NULL, y = "log10 Viral Counts") +
+  stat_compare_means(aes(group = group), method = "wilcox.test",label = "p.signif", hide.ns = T, show.legend = F,bracket.size = 10) +
+  theme_classic();p1
+
+ggsave("phenotype/figures/Viral_load.pdf", p1, width = 4, height = 4)
+
+```
+

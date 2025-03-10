@@ -1,0 +1,488 @@
+---
+title: "DMR_analysis"
+author: "Javier Rodriguez Casariego"
+date: "2023-05-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia/WGBS/')
+```
+
+load libraries
+```{r libraries}
+library(data.table)
+library(gplots)
+library(ggplot2) #install.packages('ggplot2')
+library(dplyr)
+library(broom)
+library(RColorBrewer)
+library(egg) #install.packages('egg')
+library(purrr)
+library(nlme)
+library(vegan)
+library(tidyverse)
+library(adegenet)
+library(DESeq2) #BiocManager::install('DESeq2')
+library(pheatmap)
+library(cowplot)
+library(ggpubr)
+```
+
+```{r set functions}
+## ggplot theme
+theme_custom <- function() {
+  theme_bw(base_size = 10) %+replace%    #, base_family = "Arial"
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(), 
+      panel.background = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA),
+      legend.background = element_rect(fill = NA, colour = NA),
+      axis.text.x = element_text(angle=45, hjust=1, vjust = 1)#,
+      #legend.title = element_text(size = 8), 
+      #legend.text = element_text(size = 7)
+    )
+}
+
+```
+
+```{r load data}
+meta <- read.csv("../miRNA/data/coldata.csv", header = TRUE)
+meta <- meta[which(meta$Tissue=="Abdominal"), c(2:6)] %>%
+  mutate_if(is.character, as.factor) 
+meta$Batch <- as.factor(meta$Batch)
+meta$Treatment <- factor(meta$Treatment, levels = c("Control", "H_6h", "H_6-days", "Recovery", ordered = T))
+naive_samples <- as.vector(meta[which(meta$Batch==60),1])
+pre_exposed_samples <- as.vector(meta[which(meta$Batch==71),1])
+
+all_DMR_100bp<-read.csv("data/DMR_counts/all_exp_DMR100bp_cov10x_rms_results_collapsed.tsv", sep = "\t", header = TRUE)
+colnames(all_DMR_100bp)[1] <- "chr"
+
+all_DMR_250bp<-read.csv("data/DMR_counts/all_exp_DMR250bp_cov10x_rms_results_collapsed.tsv", sep = "\t", header = TRUE)
+colnames(all_DMR_250bp)[1] <- "chr"
+
+
+```
+
+```{r prepare data for analysis}
+###Filter regions present in over 75% of samples
+
+df <- data.frame() #create empty data frame to bind filtered rows into
+for(i in (1:nrow(all_DMR_100bp))){
+  ctrl <- all_DMR_100bp[i,c(7:12)] #define columns from the category ctrol
+  t6h <- all_DMR_100bp[i,c(19:21,25:27)] #define columns from the category t6h
+  t6d <- all_DMR_100bp[i,c(13:18)] #define columns from the category t6d
+  rec <- all_DMR_100bp[i,c(22:24,28:30)] #define columns from the category rec
+       if(length(which(is.na(ctrl))) < 2 & length(which(is.na(t6h))) < 2 & length(which(is.na(t6d))) < 2 & length(which(is.na(rec))) < 2){
+  df <- rbind(df,all_DMR_100bp[i,]) #conditional statement: if less than 2 samples/category have NA for % methylation bind the whole row to the new dataframe
+  }
+}
+#save df as a specific variable
+all_DMR_100bp <- df
+
+all_DMR_100bp$ID <- paste(all_DMR_100bp$chr,":", all_DMR_100bp$start,"-",all_DMR_100bp$end, sep = "")
+all_DMR_100bp$ID <- gsub("__.*__.*:",":",all_DMR_100bp$ID)
+
+
+#build %meth per DMR matrix for 100bp dataset
+perc_methDMR_100 <- all_DMR_100bp[,c(31,7:30)]
+colnames(perc_methDMR_100) <- gsub("methylation_level_","", colnames(perc_methDMR_100))
+
+perc_meth_100 <- perc_methDMR_100[,-1] %>%
+    select(sort(names(.)))
+boxplot(perc_meth_100) + theme_custom()
+row.names(perc_meth_100) <- perc_methDMR_100$ID 
+
+Naive_perc_meth_100 <- perc_meth_100[,colnames(perc_meth_100) %in% naive_samples]
+pre_exposed_perc_meth_100 <- perc_meth_100[,colnames(perc_meth_100) %in% pre_exposed_samples]
+
+save(all_DMR_100bp, perc_meth_100, meta, Naive_perc_meth_100, pre_exposed_perc_meth_100, file = "output/DMR_data.RData")
+```
+
+```{r pcoa manhatan distance on raw percent data}
+
+sampleDists_Eu <- dist(t(perc_meth_100), method = "manhattan")
+sampleDist_EuMatrix <- as.matrix(sampleDists_Eu)
+
+mds <- as.data.frame(meta) %>% 
+  cbind(cmdscale(sampleDist_EuMatrix)) %>%
+  mutate(Cohort = ifelse(Batch == "60", "naïve", "pre-exposed"))
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(Cohort, Treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDist_EuMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = Treatment, shape = Cohort)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2),
+               lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2, fill = Treatment)) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`, fill = Treatment), show.legend = F) +
+  guides(shape = guide_legend(order = 2, override.aes = list(fill = "black"))) +
+  guides(alpha = guide_legend(override.aes = list(shape = 21, alpha = 1, fill = c("black", "white")))) +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing.y = unit(0, "cm"))
+
+pcoa
+
+ggsave(filename = "figures/Fig_pcoa_DMR.png",pcoa, width = 109, height = 84.5, units = "mm")
+
+```
+
+```{r pcoa manhattan distance Naive only}
+
+sampleDists_Eu <- dist(t(Naive_perc_meth_100), method = "manhattan")
+sampleDist_EuMatrix <- as.matrix(sampleDists_Eu)
+
+mds <- as.data.frame(meta[which(meta$Batch==60),]) %>% 
+  cbind(cmdscale(sampleDist_EuMatrix)) 
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(Treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDist_EuMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = Treatment)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2),
+               lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2, fill = Treatment)) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`, fill = Treatment), show.legend = F) +
+  guides(shape = guide_legend(order = 2, override.aes = list(fill = "black"))) +
+  guides(alpha = guide_legend(override.aes = list(shape = 21, alpha = 1, fill = c("black", "white")))) +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing.y = unit(0, "cm"))
+
+pcoa
+
+ggsave(filename = "figures/Fig_pcoa_DMR_naive.png",pcoa, width = 109, height = 84.5, units = "mm")
+
+```
+
+```{r pcoa manhattan distance Pre-exposed only}
+
+sampleDists_Eu <- dist(t(pre_exposed_perc_meth_100), method = "manhattan")
+sampleDist_EuMatrix <- as.matrix(sampleDists_Eu)
+
+mds <- as.data.frame(meta[which(meta$Batch==71),]) %>% 
+  cbind(cmdscale(sampleDist_EuMatrix)) 
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(Treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDist_EuMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = Treatment)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2),
+               lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2, fill = Treatment)) +
+  geom_point(size = 0.7, aes(x = `1`, y = `2`, fill = Treatment), show.legend = F) +
+  guides(shape = guide_legend(order = 2, override.aes = list(fill = "black"))) +
+  guides(alpha = guide_legend(override.aes = list(shape = 21, alpha = 1, fill = c("black", "white")))) +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing.y = unit(0, "cm"))
+
+pcoa
+
+ggsave(filename = "figures/Fig_pcoa_DMR_preexposed.png",pcoa, width = 109, height = 84.5, units = "mm")
+
+```
+
+### DAPC analysis
+
+```{r prepare data}
+
+coldata <- meta %>%
+  as_tibble() %>%
+  select(Sample_Name, Batch, Treatment) %>%
+  mutate(group = paste(Treatment, Batch, sep = "_"))
+coldata <- arrange(coldata, by=Sample_Name)
+colcounts <- perc_meth_100 %>%
+  rownames_to_column("gene") %>%
+  as_tibble() %>%
+  gather(key = "Sample_Name", value = "count", -gene) %>%
+  mutate(count=count*100) %>%
+  mutate(count=round(count, 0))
+countData <- (round(perc_meth_100*100, 0))
+
+# eliminate NAs
+df <- data.frame() 
+for(i in (1:nrow(countData))){
+   ctrl <- all_DMR_100bp[i,c(7:12)] #define columns from the category ctrol
+  t6h <- all_DMR_100bp[i,c(19:21,25:27)] #define columns from the category t6h
+  t6d <- all_DMR_100bp[i,c(13:18)] #define columns from the category t6d
+  rec <- all_DMR_100bp[i,c(22:24,28:30)] #define columns from the category rec
+    if(length(which(is.na(ctrl))) < 1 & length(which(is.na(t6h))) < 1 & length(which(is.na(t6d))) < 1 & length(which(is.na(rec))) < 1){
+  df <- rbind(df,countData[i,])
+    }
+}
+
+countData <- df 
+
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = coldata,
+                              design = ~ group)
+dds_60 <- DESeqDataSetFromMatrix(countData = countData[,colnames(countData) %in% naive_samples],
+                              colData = coldata[which(coldata$Batch==60),],
+                              design = ~ Treatment)
+dds_71 <- DESeqDataSetFromMatrix(countData = countData[,colnames(countData) %in% pre_exposed_samples],
+                              colData = coldata[which(coldata$Batch==71),],
+                              design = ~ Treatment)
+
+vsd <- vst(dds, blind = FALSE)
+vsd_60 <- vst(dds_60, blind = FALSE)
+vsd_71 <- vst(dds_71, blind = FALSE)
+
+```
+
+Run DAPC analysis for all and each batch independently 
+```{r DAPC_all_batch : Define number of PC to maintain and run DAPC}
+
+set.seed(1234)
+
+# How many PCs should be kept?
+dat <- data.frame(assay(vsd)) 
+
+dapc2 <- dapc(t(dat), colData(dds)$group, n.da=7, n.pca=100)
+temp <- optim.a.score(dapc2, n.sim = 5)
+my.dapc <- function(n.pca) dapc(t(dat), colData(dds)$group, n.pca = n.pca, n.da = 3)
+
+scatter(dapc2, cell = 1, pch = 18:23, cstar = 0, scree.da = TRUE, scree.pca=TRUE, posi.pca = "topright",
+        mstree = FALSE, lwd = 2, lty = 2)
+
+library(furrr)
+
+plan(multisession)
+
+my.dapc.res <- tibble(n.pca = 1:25) %>%
+  mutate(dapc = map(n.pca, my.dapc), 
+         a.score = furrr::future_map(dapc, a.score, n.sim = 500, seed=TRUE),
+         mean = map_dbl(a.score, ~ .$mean),
+         cumvar = map_dbl(dapc, ~ .$var))
+
+my.dapc.res %>%
+   arrange(-mean) %>%
+   head()
+
+# Retaining 1 PC's gives highest a-score but low variance explained. Therefore, let's use 3 PC's for the DA. 
+
+
+# Run the DAPC 
+
+dp1 <- dapc(t(dat), colData(dds)$group,
+              n.pca = 8, n.da = 7)   
+scatter(dp1,bg="white",scree.da=TRUE,scree.pca=TRUE,legend=TRUE,solid=.4) 
+
+varexpl <- round((dp1$eig/sum(dp1$eig))[1:2] * 100, 1)
+
+dapc <- tibble(sample = rownames(dp1$ind.coord),
+               grp = dp1$grp,
+               LD1 = dp1$ind.coord[,1],
+               LD2 = dp1$ind.coord[,2])
+dapc <- dapc %>%
+  group_by(grp) %>%
+  summarize(c1 = mean(LD1),
+            c2 = mean(LD2)) %>%
+  full_join(dapc)
+
+# Plot
+
+# Plot with spiders
+
+t <- meta[, c(1,4,5)]
+colnames(t) <- c("sample", "treatment", "batch")
+dapc <- merge(x = dapc, y= t, by.x="sample", all.x=TRUE, sort=TRUE)
+
+dapc.fig <- 
+  ggplot(dapc, aes(shape = batch, 
+                             fill = factor(treatment, levels = c("Control","H_6h","H_6-days","Recovery"), ordered = T))) +
+  geom_segment(mapping = aes(x = LD1, y = LD2, xend = c1, yend = c2), lwd = 0.25, col = "grey") +
+  geom_point(aes(x = c1, y = c2), size = 2) +
+  geom_point(aes(x = LD1, y = LD2), size = 1, show.legend = FALSE) +
+  scale_shape_manual(name = "cohort", labels = c("naive", "pre-exposed"), values = c(21, 24)) +
+  scale_fill_discrete(name = "treatment") +
+  guides(fill = guide_legend(override.aes = list(shape = 21, size = 2))) +
+  guides(shape = guide_legend(override.aes = list(fill = "black", size = 2))) +
+  labs(x = paste0("LD1 [", varexpl[1],"%]"), y = paste0("LD2 [", varexpl[2],"%]")) +
+  theme_custom() 
+
+dapc.fig
+
+
+ggsave(filename = "figures/DAPC_DMR.png", plot = dapc.fig, width = 109, height = 84.5, units = "mm")
+
+```
+
+```{r DAPC_batch_60 : Define number of PC to maintain and run DAPC}
+
+set.seed(1234)
+
+# How many PCs should be kept?
+dat <- data.frame(assay(vsd_60)) 
+
+dapc2 <- dapc(t(dat), colData(dds_60)$Treatment, n.da=3, n.pca=100)
+temp <- optim.a.score(dapc2, n.sim = 5)
+my.dapc <- function(n.pca) dapc(t(dat), colData(dds_60)$Treatment, n.pca = n.pca, n.da = 3)
+
+scatter(dapc2, cell = 1, pch = 18:23, cstar = 0, scree.da = TRUE, scree.pca=TRUE, posi.pca = "topright",
+        mstree = FALSE, lwd = 2, lty = 2)
+
+library(furrr)
+
+plan(multisession)
+
+my.dapc.res <- tibble(n.pca = 1:25) %>%
+  mutate(dapc = map(n.pca, my.dapc), 
+         a.score = furrr::future_map(dapc, a.score, n.sim = 500, seed=TRUE),
+         mean = map_dbl(a.score, ~ .$mean),
+         cumvar = map_dbl(dapc, ~ .$var))
+
+my.dapc.res %>%
+   arrange(-mean) %>%
+   head()
+
+# Retaining 3 PC's gives highest a-score.
+
+
+# Run the DAPC 
+
+dp1 <- dapc(t(dat), colData(dds_60)$Treatment,
+              n.pca = 3, n.da = 3)   
+scatter(dp1,bg="white",scree.da=TRUE,scree.pca=TRUE,legend=TRUE,solid=.4) 
+
+varexpl <- round((dp1$eig/sum(dp1$eig))[1:2] * 100, 1)
+
+dapc <- tibble(sample = rownames(dp1$ind.coord),
+               grp = dp1$grp,
+               LD1 = dp1$ind.coord[,1],
+               LD2 = dp1$ind.coord[,2])
+dapc <- dapc %>%
+  group_by(grp) %>%
+  summarize(c1 = mean(LD1),
+            c2 = mean(LD2)) %>%
+  full_join(dapc)
+
+# Plot
+
+# Plot with spiders
+
+t <- meta[, c(1,4,5)]
+colnames(t) <- c("sample", "treatment", "batch")
+dapc <- merge(x = dapc, y= t, by.x="sample", all.x=TRUE, sort=TRUE)
+
+dapc.fig <- 
+  ggplot(dapc, aes(color = treatment)) +
+  geom_segment(mapping = aes(x = LD1, y = LD2, xend = c1, yend = c2),
+               lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2, fill = treatment)) +
+  geom_point(size = 0.7, aes(x = LD1, y = LD2, fill = treatment), show.legend = F) +
+  guides(shape = guide_legend(order = 2, override.aes = list(fill = "black"))) +
+  guides(alpha = guide_legend(override.aes = list(shape = 21, alpha = 1, fill = c("black", "white")))) +
+  labs(x = paste0("LD1 [", varexpl[1],"%]"), y = paste0("LD2 [", varexpl[2],"%]")) +
+  theme_custom() 
+
+dapc.fig
+
+
+ggsave(filename = "figures/DAPC_DMR_naive.png", plot = dapc.fig, width = 109, height = 84.5, units = "mm")
+
+```
+
+```{r DAPC_batch_71 : Define number of PC to maintain and run DAPC}
+
+set.seed(1234)
+
+# How many PCs should be kept?
+dat <- data.frame(assay(vsd_71)) 
+
+dapc2 <- dapc(t(dat), colData(dds_71)$Treatment, n.da=3, n.pca=100)
+temp <- optim.a.score(dapc2, n.sim = 5)
+my.dapc <- function(n.pca) dapc(t(dat), colData(dds_71)$Treatment, n.pca = n.pca, n.da = 3)
+
+scatter(dapc2, cell = 1, pch = 18:23, cstar = 0, scree.da = TRUE, scree.pca=TRUE, posi.pca = "topright",
+        mstree = FALSE, lwd = 2, lty = 2)
+
+library(furrr)
+
+plan(multisession)
+
+my.dapc.res <- tibble(n.pca = 1:25) %>%
+  mutate(dapc = map(n.pca, my.dapc), 
+         a.score = furrr::future_map(dapc, a.score, n.sim = 500, seed=TRUE),
+         mean = map_dbl(a.score, ~ .$mean),
+         cumvar = map_dbl(dapc, ~ .$var))
+
+my.dapc.res %>%
+   arrange(-mean) %>%
+   head()
+
+# Retaining 7 PC's gives second highest a-score but over 75% of variance explained. Therefore, let's use 7 PC's for the DA. 
+
+
+# Run the DAPC 
+
+dp1 <- dapc(t(dat), colData(dds_71)$Treatment,
+              n.pca = 7, n.da = 3)   
+scatter(dp1,bg="white",scree.da=TRUE,scree.pca=TRUE,legend=TRUE,solid=.4) 
+
+varexpl <- round((dp1$eig/sum(dp1$eig))[1:2] * 100, 1)
+
+dapc <- tibble(sample = rownames(dp1$ind.coord),
+               grp = dp1$grp,
+               LD1 = dp1$ind.coord[,1],
+               LD2 = dp1$ind.coord[,2])
+dapc <- dapc %>%
+  group_by(grp) %>%
+  summarize(c1 = mean(LD1),
+            c2 = mean(LD2)) %>%
+  full_join(dapc)
+
+# Plot
+
+# Plot with spiders
+t <- meta[, c(1,4,5)]
+colnames(t) <- c("sample", "treatment", "batch")
+dapc <- merge(x = dapc, y= t, by.x="sample", all.x=TRUE, sort=TRUE)
+
+dapc.fig <- 
+  ggplot(dapc, aes(color = treatment)) +
+  geom_segment(mapping = aes(x = LD1, y = LD2, xend = c1, yend = c2),
+               lwd = 0.25, col = "grey") +
+  geom_point(size = 2, aes(x = c1, y = c2, fill = treatment)) +
+  geom_point(size = 0.7, aes(x = LD1, y = LD2, fill = treatment), show.legend = F) +
+  guides(shape = guide_legend(order = 2, override.aes = list(fill = "black"))) +
+  guides(alpha = guide_legend(override.aes = list(shape = 21, alpha = 1, fill = c("black", "white")))) +
+  labs(x = paste0("LD1 [", varexpl[1],"%]"), y = paste0("LD2 [", varexpl[2],"%]")) +
+  theme_custom() 
+
+dapc.fig
+
+
+
+
+ggsave(filename = "figures/DAPC_DMR_pre_exposed.png", plot = dapc.fig, width = 109, height = 84.5, units = "mm")
+
+```
+

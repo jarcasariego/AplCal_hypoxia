@@ -1,0 +1,21 @@
+[2023-03-09 09:52:13,726] multiqc                                            [DEBUG  ]  This is MultiQC v1.14
+[2023-03-09 09:52:13,728] multiqc                                            [DEBUG  ]  Command used: /home/jrodr979/.conda/envs/qc_env/bin/multiqc ACAL_L,0,-0.9
+[2023-03-09 09:52:14,363] multiqc                                            [DEBUG  ]  Latest MultiQC version is v1.14
+[2023-03-09 09:52:14,363] multiqc                                            [DEBUG  ]  Working dir : /scratch/jeirinlo/jrodr979/Aplysia_trans_WGBS/20230308_Alignment_Test_WGBS_ACAL
+[2023-03-09 09:52:14,363] multiqc                                            [DEBUG  ]  Template    : default
+[2023-03-09 09:52:14,363] multiqc                                            [DEBUG  ]  Running Python 3.11.0 | packaged by conda-forge | (main, Jan 14 2023, 12:27:40) [GCC 11.3.0]
+[2023-03-09 09:52:14,364] multiqc                                            [DEBUG  ]  Analysing modules: custom_content, ccs, ngsderive, purple, conpair, lima, peddy, somalier, methylQA, mosdepth, phantompeakqualtools, qualimap, preseq, hifiasm, quast, qorts, rna_seqc, rockhopper, rsem, rseqc, busco, bustools, goleft_indexcov, gffcompare, disambiguate, supernova, deeptools, sargasso, verifybamid, mirtrace, happy, mirtop, sambamba, gopeaks, homer, hops, macs2, theta2, snpeff, gatk, htseq, bcftools, featureCounts, fgbio, dragen, dragen_fastqc, dedup, pbmarkdup, damageprofiler, biobambam2, jcvi, mtnucratio, picard, vep, sentieon, prokka, qc3C, nanostat, samblaster, samtools, sexdeterrmine, eigenstratdatabasetools, bamtools, jellyfish, vcftools, longranger, stacks, varscan2, snippy, umitools, bbmap, bismark, biscuit, diamond, hicexplorer, hicup, hicpro, salmon, kallisto, slamdunk, star, hisat2, tophat, bowtie2, bowtie1, cellranger, snpsplit, odgi, pangolin, nextclade, humid, kat, leehom, adapterRemoval, bbduk, clipandmerge, cutadapt, flexbar, kaiju, kraken, malt, motus, trimmomatic, sickle, skewer, sortmerna, biobloomtools, fastq_screen, afterqc, fastp, fastqc, filtlong, prinseqplusplus, pychopper, porechop, pycoqc, minionqc, anglerfish, multivcfanalyzer, clusterflow, checkqc, bcl2fastq, bclconvert, interop, ivar, flash, seqyclean, optitype, whatshap
+[2023-03-09 09:52:14,364] multiqc                                            [DEBUG  ]  Using temporary directory for creating report: /tmp/tmp5671gmax
+[2023-03-09 09:52:14,448] multiqc                                            [INFO   ]  Search path : /scratch/jeirinlo/jrodr979/Aplysia_trans_WGBS/20230308_Alignment_Test_WGBS_ACAL/ACAL_L,0,-0.9
+[2023-03-09 09:52:14,499] multiqc                                            [DEBUG  ]  Summary of files that were skipped by the search: [skipped_ignore_pattern: 30] // [skipped_no_match: 30]
+[2023-03-09 09:52:15,104] multiqc.plots.bargraph                             [DEBUG  ]  Using matplotlib version 3.7.0
+[2023-03-09 09:52:15,107] multiqc.plots.linegraph                            [DEBUG  ]  Using matplotlib version 3.7.0
+[2023-03-09 09:52:15,109] multiqc                                            [DEBUG  ]  No samples found: custom_content
+[2023-03-09 09:52:15,169] multiqc.modules.bismark.bismark                    [INFO   ]  Found 30 alignment reports
+[2023-03-09 09:52:15,184] multiqc                                            [INFO   ]  Compressing plot data
+[2023-03-09 09:52:15,193] multiqc                                            [WARNING]  Previous MultiQC output found! Adjusting filenames..
+[2023-03-09 09:52:15,193] multiqc                                            [WARNING]  Use -f or --force to overwrite existing reports instead
+[2023-03-09 09:52:15,193] multiqc                                            [INFO   ]  Report      : multiqc_report_3.html
+[2023-03-09 09:52:15,193] multiqc                                            [INFO   ]  Data        : multiqc_data_3
+[2023-03-09 09:52:15,193] multiqc                                            [DEBUG  ]  Moving data file from '/tmp/tmp5671gmax/multiqc_data' to '/scratch/jeirinlo/jrodr979/Aplysia_trans_WGBS/20230308_Alignment_Test_WGBS_ACAL/multiqc_data_3'
+[2023-03-09 09:52:15,334] multiqc                                            [INFO   ]  MultiQC complete

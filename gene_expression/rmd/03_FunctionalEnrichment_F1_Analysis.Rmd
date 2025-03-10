@@ -33,8 +33,10 @@ AcTxAnot2 <- read.delim("gene_expression/data/Annotation/Acal_full_annot.txt")
 library(DOSE)
 
 extracted_de <- read_csv("gene_expression/output/DE_wild/Abdominal/DE_raw_data.csv") 
-gene_list<-extracted_de[extracted_de$contrast=="Hyp_T2h.Control",]$log2FoldChange
-names(gene_list)=extracted_de[extracted_de$contrast=="Hyp_T2h.Control",]$gene
+gene_list<-extracted_de$gene %>%
+  unique()
+
+load("gene_expression/data/clusters_A.R")
 
 # Abdominal
 gc_A <- list(A1 = rownames(res.A_clusters[res.A_clusters$clust == "A1",]),
@@ -54,7 +56,7 @@ gc_A <- list(A1 = rownames(res.A_clusters[res.A_clusters$clust == "A1",]),
 
 ck_A <- compareCluster(geneCluster = gc_A, 
                        fun = enrichGO, 
-                       universe = names(gene_list),
+                       universe = gene_list,
                        OrgDb = org.Acal.eg.db,
                        keyType  = "SYMBOL",
                        ont   = "BP",
@@ -69,6 +71,12 @@ dotplot_A <- dotplot(ck_A, showCategory = 3, label_format = 50)
 ggsave(plot = dotplot_A,filename = "gene_expression/output/DE_wild/Abdominal/dotplot_GO_clusters.png",width = 9,height=10)
 
 # Pleural/Pedal
+
+extracted_de <- read_csv("gene_expression/output/DE_wild/Pleural/DE_raw_data.csv") 
+gene_list<-extracted_de$gene %>%
+  unique()
+load("gene_expression/data/clusters_Pp.R")
+
 gc_P <- list(P1 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P1",]),
              P2 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P2",]),
              P3 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P3",]),
@@ -78,7 +86,7 @@ gc_P <- list(P1 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P1",]),
 
 ck_P <- compareCluster(geneCluster = gc_P, 
                        fun = enrichGO, 
-                       universe = names(gene_list),
+                       universe = gene_list,
                        OrgDb = org.Acal.eg.db,
                        keyType  = "SYMBOL",
                        ont   = "BP",
@@ -97,9 +105,10 @@ ggsave(plot = dotplot_P,filename = "gene_expression/output/DE_wild/Pleural/dotpl
 ```{r fig.height=8, fig.width= 9}
 
 extracted_de <- read_csv("gene_expression/output/DE_lab/Abdominal/DE_raw_data.csv") 
-gene_list<-extracted_de[extracted_de$contrast=="Hyp_T2h.Control",]$log2FoldChange
-names(gene_list)=extracted_de[extracted_de$contrast=="Hyp_T2h.Control",]$gene
+gene_list<-extracted_de$gene %>%
+  unique()
 
+load("gene_expression/data/Lab_clusters_A.R")
 # Abdominal
 gc_A <- list(A1 = rownames(res.A_clusters[res.A_clusters$clust == "A1",]),
              A2 = rownames(res.A_clusters[res.A_clusters$clust == "A2",]),
@@ -132,6 +141,13 @@ dotplot_A <- dotplot(ck_A, showCategory = 3, label_format = 50);dotplot_A
 ggsave(plot = dotplot_A,filename = "gene_expression/output/DE_lab/Abdominal/dotplot_GO_clusters.png",width = 9,height=10)
 
 # Pleural/Pedal
+
+extracted_de <- read_csv("gene_expression/output/DE_lab/Pleural/DE_raw_data.csv") 
+gene_list<-extracted_de$gene %>%
+  unique()
+
+load("gene_expression/data/Lab_clusters_Pp.R")
+
 gc_P <- list(P1 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P1",]),
              P2 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P2",]),
              P3 = rownames(res.Pp_clusters[res.Pp_clusters$clust == "P3",]),
@@ -157,6 +173,10 @@ ggsave(plot = dotplot_P,filename = "gene_expression/output/DE_lab/Pleural/dotplo
 ```
 # Enrichment for shared DE genes across all timepoints between LC and WC
 ```{r}
+
+extracted_de <- read_csv("gene_expression/output/DE_lab/Abdominal/DE_raw_data.csv") 
+gene_list<-extracted_de$gene %>%
+  unique()
 
 s_gene_list <- read_csv("gene_expression/output/TS_output/LCvsWC_Abdominal/genes_in_set.csv")$gene
 ggo <- groupGO(gene     = s_gene_list,
@@ -192,48 +212,6 @@ goplot(ego)
 
 ```
 
-ggoC2 <- groupGO(gene     = C2_gene_list,
-               OrgDb    = org.Acal.eg.db,
-               keyType = "SYMBOL",
-               ont      = "BP",
-               level    = 5,
-               readable = TRUE)
-
-egoC2 <- ego <- enrichGO(gene = C2_gene_list,
-                universe      = names(gene_list),
-                OrgDb         = org.Acal.eg.db,
-                keyType       = "SYMBOL",
-                ont           = "BP",
-                pAdjustMethod = "none",
-                pvalueCutoff  = 0.05,
-                qvalueCutoff  = 0.05,
-        readable      = TRUE)
-egoC2 <- filter(egoC2, p.adjust < .05, qvalue < 0.1)
-egoC2@result$Description[1:10]
-
-ggoC2 <- mutate(ggoC2, geneRatio = parse_ratio(GeneRatio)) %>%
-  arrange(desc(geneRatio))
-head(ggoC2, n =20)
-
-
-  name_result_folder<-'gene_expression/output/TS_output/LCvsWC_Pleural/'
-
-extracted_clust <- P_TS_object@PART_results$part_data %>%
-  rownames_to_column("gene") %>%
-  inner_join(., AcTxAnot2 %>%
-               dplyr::select(Entry, gene), by = "gene", keep = TRUE) 
-C1_gene_list<-extracted_clust[extracted_clust$gene_cluster == "C1",]$Entry
-C2_gene_list<-extracted_clust[extracted_clust$gene_cluster == "C2",]$Entry
-
-kk <- enrichMKEGG(gene         = C2_gene_list,
-                 organism     = 'hsa',
-                 keyType      = "uniprot",
-                 pAdjustMethod = "none",
-                 pvalueCutoff = 0.1)
-
-head(kk)
-
-
 # Enrichment for Time Series Analysis Lab vs Wild
 ```{r}
 # load TS_object
@@ -253,8 +231,8 @@ names(A_TS_object@DE_results$conditional)
 names(A_TS_object@DE_results$temporal)
 
 #Select target DE results
-target_DE='conditional'
-target_name='Lab_cross_vs_Wild_cross_TP_6' #Change Time point and re-run
+target_DE='temporal'
+target_name='TP_1_vs_TP_0' #Change Time point and re-run
 
 #Extract gene list
 extracted_de <- A_TS_object@DE_results[[target_DE]][[target_name]]$DE_raw_data[,c('gene_id','log2FoldChange')] 
@@ -275,7 +253,7 @@ keytypes(org.Acal.eg.db)
 #parameters can be left as default or modified - more information is available
 #on the cluster profiler page
 gse <- gseGO(geneList=gene_list,
-             ont ="ALL",
+             ont ="BP",
              keyType = "SYMBOL",
              nPermSimple = 100000,
              minGSSize = 3,
@@ -340,8 +318,8 @@ names(P_TS_object@DE_results$conditional)
 names(P_TS_object@DE_results$temporal)
 
 #Select target DE results
-target_DE='conditional'
-target_name='Lab_cross_vs_Wild_cross_TP_6' #Change Time point and re-run
+target_DE='temporal'
+target_name='TP_1_vs_TP_0' #Change Time point and re-run
 
 #Extract gene list
 extracted_de <- P_TS_object@DE_results[[target_DE]][[target_name]]$DE_raw_data[,c('gene_id','log2FoldChange')] 
@@ -362,7 +340,7 @@ keytypes(org.Acal.eg.db)
 #parameters can be left as default or modified - more information is available
 #on the cluster profiler page
 gse <- gseGO(geneList=gene_list,
-             ont ="ALL",
+             ont ="BP",
              keyType = "SYMBOL",
              nPermSimple = 100000,
              minGSSize = 3,

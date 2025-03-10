@@ -1,0 +1,223 @@
+---
+title: "DifferentialMethylation_DSS"
+author: "Javier A. Rodriguez Casariego"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '/Volumes/JARC_2T/NSF-CREST_Postdoc/LongTerm_Hypoxia_exp/AplCal_hypoxia/WGBS/')
+```
+
+```{r load libraries, eval=FALSE, include=FALSE}
+library(DSS) # BiocManager::install("DSS")
+require(bsseq)
+library(tidyverse)
+library(ggvenn)
+```
+
+```{bash preprocess .tab files to fit DSS format}
+## 10x_Tab files derived from coverage2cytosine code have 6 columns (chr, start, end, %meth, #methyl, #no methylated). For DSS we only need chr, pos (either start or end will work), total number of Cs covered, methylated Cs. Run this code to built the datasets that are called in the next step 
+
+cd ../data/bedGraphs/
+
+for f in *.tab
+do
+  STEM=$(basename "${f}" _10x.tab)
+  cat "${f}" | awk -F $'\t' 'BEGIN {OFS = FS} {print $1, $2, $3, $3+$4}' \
+  > "${STEM}"_10x_DSS.tab
+done
+
+```
+
+
+```{r}
+
+path = getwd()
+AC163A = read.table(file.path(path, "data/bedGraphs/AC163A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X")) 
+AC164A = read.table(file.path(path, "data/bedGraphs/AC164A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC169A = read.table(file.path(path, "data/bedGraphs/AC169A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC170A = read.table(file.path(path, "data/bedGraphs/AC170A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC172A = read.table(file.path(path, "data/bedGraphs/AC172A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC174A = read.table(file.path(path, "data/bedGraphs/AC174A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC177A = read.table(file.path(path, "data/bedGraphs/AC177A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC179A = read.table(file.path(path, "data/bedGraphs/AC179A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC181A = read.table(file.path(path, "data/bedGraphs/AC181A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC182A = read.table(file.path(path, "data/bedGraphs/AC182A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC183A = read.table(file.path(path, "data/bedGraphs/AC183A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC184A = read.table(file.path(path, "data/bedGraphs/AC184A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC190A = read.table(file.path(path, "data/bedGraphs/AC190A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC191A = read.table(file.path(path, "data/bedGraphs/AC191A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC192A = read.table(file.path(path, "data/bedGraphs/AC192A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC193A = read.table(file.path(path, "data/bedGraphs/AC193A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC194A = read.table(file.path(path, "data/bedGraphs/AC194A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC195A = read.table(file.path(path, "data/bedGraphs/AC195A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC202A = read.table(file.path(path, "data/bedGraphs/AC202A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC203A = read.table(file.path(path, "data/bedGraphs/AC203A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC204A = read.table(file.path(path, "data/bedGraphs/AC204A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC205A = read.table(file.path(path, "data/bedGraphs/AC205A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC206A = read.table(file.path(path, "data/bedGraphs/AC206A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+AC207A = read.table(file.path(path, "data/bedGraphs/AC207A_10x_DSS.tab"), header=FALSE, col.names = c("chr","pos","N","X"))
+
+BSobj = makeBSseqData( list(AC163A, AC164A, AC169A, AC170A, AC172A, AC174A, AC177A, AC179A,
+                            AC181A, AC182A, AC183A, AC184A, AC190A, AC191A, AC192A, AC193A, 
+                            AC194A, AC195A, AC202A, AC203A, AC204A, AC205A, AC206A, AC207A),
+     c("C_60_1", "C_60_2", "C_71_1", "C_71_2", "C_60_3", "C_71_3", "LH_60_1", "LH_71_1", 
+       "LH_60_2", "LH_60_3", "LH_71_2", "LH_71_3", "SH_60_1", "SH_60_2", "SH_60_3", 
+       "R_60_1", "R_60_2", "R_60_3", "SH_71_1", "SH_71_2", "SH_71_3", "R_71_1", "R_71_2", "R_71_3"))
+
+BSobj
+
+cohort <- factor(c(60,60,71,71,60,71,60,71,60,60,71,71,60,60,60,60,60,60,71,71,71,71,71,71))
+treatment <- c(rep(c("C","LH"), each = 6), rep("SH", 3), rep("R",3),rep("SH", 3), rep("R",3))
+design = data.frame(cohort, treatment)
+
+save(BSobj, file = "data/MethDataObj.RData")
+## An object of type 'BSseq' with
+##   1000 methylation loci
+##   4 samples
+## has not been smoothed
+## All assays are in-memory
+
+```
+
+```{r}
+load("data/MethDataObj.RData")
+
+
+# PreConditioned Cohort
+dml_Pre_CvsSH = DMLtest(BSobj, group1=c("C_71_1","C_71_2","C_71_2"), group2=c("SH_71_1","SH_71_2","SH_71_2"))
+dml_Pre_CvsLH = DMLtest(BSobj, group1=c("C_71_1","C_71_2","C_71_2"), group2=c("LH_71_1","LH_71_2","LH_71_2"))
+dml_Pre_CvsR = DMLtest(BSobj, group1=c("C_71_1","C_71_2","C_71_2"), group2=c("R_71_1","R_71_2","R_71_2"))
+
+# Naive Cohort
+dml_Naive_CvsSH = DMLtest(BSobj, group1=c("C_60_1","C_60_2","C_60_2"), group2=c("SH_60_1","SH_60_2","SH_60_2"))
+dml_Naive_CvsLH = DMLtest(BSobj, group1=c("C_60_1","C_60_2","C_60_2"), group2=c("LH_60_1","LH_60_2","LH_60_2"))
+dml_Naive_CvsR = DMLtest(BSobj, group1=c("C_60_1","C_60_2","C_60_2"), group2=c("R_60_1","R_60_2","R_60_2"))
+
+# Naive vs Pre
+dml_C_NaivsPre = DMLtest(BSobj, group1=c("C_71_1","C_71_2","C_71_2"), group2=c("C_60_1","C_60_2","C_60_2"))
+dml_LH_NaivsPre = DMLtest(BSobj, group1=c("LH_71_1","LH_71_2","LH_71_2"), group2=c("LH_60_1","LH_60_2","LH_60_2"))
+dml_SH_NaivsPre = DMLtest(BSobj, group1=c("SH_71_1","SH_71_2","SH_71_2"), group2=c("SH_60_1","SH_60_2","SH_60_2"))
+dml_R_NaivsPre = DMLtest(BSobj, group1=c("R_71_1","R_71_2","R_71_2"), group2=c("R_60_1","R_60_2","R_60_2"))
+
+save(dml_Pre_CvsSH,dml_Pre_CvsLH,dml_Pre_CvsR, file = "output/DSS_output_pre")
+save(dml_Naive_CvsSH,dml_Naive_CvsLH, dml_Naive_CvsR, file= "output/DSS_output_naive")
+save(dml_C_NaivsPre,dml_SH_NaivsPre,dml_LH_NaivsPre, dml_R_NaivsPre, file= "output/DSS_output_naive_vs_pre")
+```
+
+```{r, dml/dmr reports}
+
+load(file = "output/DSS_output_pre.RData")
+load(file = "output/DSS_output_naive.RData")
+load(file= "output/DSS_output_naive_vs_pre.RData")
+
+#DMLs
+dmls_P_CvsSH = callDML(dml_Pre_CvsSH, delta=0.1, p.threshold=0.001)
+dmls_P_CvsLH = callDML(dml_Pre_CvsLH, delta=0.1, p.threshold=0.001)
+dmls_P_CvsR = callDML(dml_Pre_CvsR, delta=0.1, p.threshold=0.001)
+dmls_N_CvsSH = callDML(dml_Naive_CvsSH, delta=0.1, p.threshold=0.001)
+dmls_N_CvsLH = callDML(dml_Naive_CvsLH, delta=0.1, p.threshold=0.001)
+dmls_N_CvsR = callDML(dml_Naive_CvsR, delta=0.1, p.threshold=0.001)
+dmls_C_NaivePre = callDML(dml_C_NaivsPre, delta=0.1, p.threshold=0.001)
+dmls_LH_NaivePre = callDML(dml_LH_NaivsPre, delta=0.1, p.threshold=0.001)
+dmls_SH_NaivePre = callDML(dml_SH_NaivsPre, delta=0.1, p.threshold=0.001)
+dmls_R_NaivePre = callDML(dml_R_NaivsPre, delta=0.1, p.threshold=0.001)
+
+#DMRs
+dmrs_P_CvsSH = callDMR(dml_Pre_CvsSH, delta=0.1, p.threshold=0.001)
+dmrs_P_CvsLH = callDMR(dml_Pre_CvsLH, delta=0.1, p.threshold=0.001)
+dmrs_P_CvsR = callDMR(dml_Pre_CvsR, delta=0.1, p.threshold=0.001)
+dmrs_N_CvsSH = callDMR(dml_Naive_CvsSH, delta=0.1, p.threshold=0.001)
+dmrs_N_CvsLH = callDMR(dml_Naive_CvsLH, delta=0.1, p.threshold=0.001)
+dmrs_N_CvsR = callDMR(dml_Naive_CvsR, delta=0.1, p.threshold=0.001)
+dmrs_C_NaivePre = callDMR(dml_C_NaivsPre, delta=0.1, p.threshold=0.001)
+dmrs_LH_NaivePre = callDMR(dml_LH_NaivsPre, delta=0.1, p.threshold=0.001)
+dmrs_SH_NaivePre = callDMR(dml_SH_NaivsPre, delta=0.1, p.threshold=0.001)
+dmrs_R_NaivePre = callDMR(dml_R_NaivsPre, delta=0.1, p.threshold=0.001)
+
+par(mar=c(1,1,1,1))
+pdf(file =  "DMR.pdf",
+    width = 5, height = 30)
+showOneDMR(dmrs_N_CvsLH[6,], BSobj)
+dev.off()  
+
+
+```
+
+```{r export matrix with DMSs and DMRs for CtrlvsHypoxia contrasts}
+
+res_N <- rbind(dmrs_N_CvsSH %>% 
+                 select(chr, start, end) %>%
+                 mutate(ID=paste(chr, start, end, sep=":")) %>%
+                 select(ID), 
+               dmrs_N_CvsLH %>% 
+                 select(chr, start, end) %>%
+                 mutate(ID=paste(chr, start, end, sep=":")) %>%
+                 select(ID)) %>% unique()
+
+res_P <- rbind(dmrs_P_CvsSH %>% 
+                 select(chr, start, end) %>%
+                 mutate(ID=paste(chr, start, end, sep=":")) %>%
+                 select(ID), 
+               dmrs_P_CvsLH %>% 
+                 select(chr, start, end) %>%
+                 mutate(ID=paste(chr, start, end, sep=":")) %>%
+                 select(ID)) %>% unique()
+
+DMRs_wide <- list(naive=pull(res_N),
+                 pre_exposed=pull(res_P))
+str(DMRs_wide)
+gv <- ggvenn(DMRs_wide, fill_color = c("#0073C2FF", "#EFC000FF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv
+ggsave("figures/DMRs_by_cohort_vennDiagram.png", gv, height = 3, width = 5)
+
+intersect(DMRs_wide[[1]], DMRs_wide[[2]])
+
+res_N <- rbind(dmls_N_CvsSH %>% 
+                 select(chr, pos) %>%
+                 mutate(ID=paste(chr, pos, sep=":")) %>%
+                 select(ID), 
+               dmls_N_CvsLH %>% 
+                 select(chr, pos) %>%
+                 mutate(ID=paste(chr, pos, sep=":")) %>%
+                 select(ID)) %>% unique()
+
+res_P <- rbind(dmls_P_CvsSH %>% 
+                 select(chr, pos) %>%
+                 mutate(ID=paste(chr, pos, sep=":")) %>%
+                 select(ID), 
+               dmls_P_CvsLH %>% 
+                 select(chr, pos) %>%
+                 mutate(ID=paste(chr, pos, sep=":")) %>%
+                 select(ID)) %>% unique()
+
+DMLs_wide <- list(naive=pull(res_N),
+                 pre_exposed=pull(res_P))
+str(DMLs_wide)
+gv <- ggvenn(DMLs_wide, fill_color = c("#0073C2FF", "#EFC000FF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv
+ggsave("figures/DMLs_by_cohort_vennDiagram.png", gv, height = 3, width = 5)
+```
+
+```{r General exp design DSS analysis}
+
+X = model.matrix(~cohort+treatment, design) #additive model
+X2 = model.matrix(~cohort:treatment, design) #interaction model
+
+DMLfit = DMLfit.multiFactor(BSobj, design=design, formula=~cohort+treatment)
+
+
+DMLfit2 = DMLfit.multiFactor(BSobj, design=design, formula=~cohort*treatment)
+
+save(DMLfit, file = "../output/CplusTModelFit.RData")
+```
+

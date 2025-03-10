@@ -1,0 +1,81 @@
+---
+title: "methylkit_general_&_diff"
+author: "Javier Rodriguez Casariego"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+## Run methylkit to create beta_meth file
+```{r methylkit_ liver, eval=FALSE, include=FALSE}
+
+library("GenomicRanges")
+library("genomation")
+library("tidyverse")
+library("methylKit")
+
+directory <- "DNA_methylation/data/bedGraphs//"
+
+files <- dir(directory, pattern = "*A_10x.tab_filt")
+# This line is only used to extract Sample Name.
+file.name <- as.list(unname(sapply(files,function(x) strsplit(x,split="_")[[1]][1])))
+files <- as.list(paste(directory,files,sep=""))
+
+message("Reading CpG into R with methylKit...")
+if (!file.exists("DNA_methylation/data/methData")) dir.create("DNA_methylation/data/methData")
+
+myobj <- methRead(files,
+                  pipeline = 'bismarkCoverage',
+                  header = FALSE,
+                  sample.id= file.name,
+                  assembly="A.californica",
+                  treatment=c(0,0,1,1,0,1,4,5,4,4,5,5,2,2,2,6,6,6,3,3,3,7,7,7),
+                  context="CpG",
+                  mincov=10,
+                  dbtype = "tabix",
+                  dbdir = "DNA_methylation/data/methData")
+
+save(myobj, file="DNA_methylation/data/methData/myobj.rda")
+
+message("Figure: plot distribution")
+
+pdf("DNA_methylation/figures/DensityPlot.pdf", width=16, height=8)
+par(mfrow=c(2,3))
+for(i in 1:length(myobj)) getMethylationStats(myobj[[i]],plot=TRUE,both.strands=FALSE)
+dev.off()
+
+pdf("DNA_methylation/figures/CoveragePlot.pdf", width=16, height=8)
+par(mfrow=c(2,3))
+for(i in 1:length(myobj)) getCoverageStats(myobj[[i]],plot=TRUE,both.strands=FALSE)
+dev.off()
+
+#load("DNA_methylation/data/methData/myobj.rda")
+message("Filtering Coverage and Normalization")
+#filtered.myobj <- filterByCoverage(myobj,lo.count=10,lo.perc=NULL, hi.count=NULL,hi.perc=99.9,)
+filtered.normed.myobj <- normalizeCoverage(myobj)
+
+message("Figure: plot filtered coverage")
+
+pdf("DNA_methylation/figures/FilteredCoveragePlot.pdf", width=16, height=8)
+par(mfrow=c(2,3))
+for(i in 1:length(filtered.normed.myobj)) getCoverageStats(filtered.normed.myobj[[i]], plot=TRUE, both.strands=FALSE)
+dev.off()
+
+# DMPs
+message("Create Meth and Beta Object")
+
+meth <- methylKit::unite(filtered.normed.myobj, destrand=FALSE, min.per.group = 2, )
+beta <- percMethylation(meth)/100
+
+save(meth,file="DNA_methylation/data/methData/meth.rda")
+save(beta,file="DNA_methylation/data/methData/beta.rda")
+
+# DMRs at 250bp window
+
+tiles_meth = tileMethylCounts(filtered.myobj,
+                              win.size=250,
+                              step.size=250,
+                              cov.bases = 10)
+head(tiles[[1]],3)
+
+```

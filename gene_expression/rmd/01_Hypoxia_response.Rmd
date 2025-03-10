@@ -451,7 +451,7 @@ countMatrix <- countMatrix[-c(1:4),]
 ```{r sample_metadata}
 # Import sample metadata
 sdat0 <- read_csv("gene_expression/data/sample_metadata.csv") %>%
-  filter(sample_ID %in% sampleNames)
+  dplyr::filter(sample_ID %in% sampleNames)
 sdat0$treatment <- gsub("C", "Control", sdat0$treatment)
 sdat0$batch <- gsub(60, "Lab_cross", sdat0$batch)
 sdat0$batch <- gsub(71, "Wild_cross", sdat0$batch)
@@ -518,6 +518,65 @@ sdat_W <- sdat0[sdat0$batch == "Wild_cross",] %>%
   column_to_rownames(var = "sample_ID") 
 
 countMatrix_W <- countMatrix[, colnames(countMatrix) %in% rownames(sdat_W)]
+```
+
+### Principal Coordinates Analysis
+```{r pcoa, eval = TRUE}
+
+# Create full DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = countMatrix_W,
+                              colData = sdat_W,
+                              design = ~ treatment + tissue)
+### Remove genes counted less than 1
+dds <- dds[ rowMeans(counts(dds)) > 1, ]
+
+# Normalize expression data for visualization purposes using VST tranformation
+vsd <- vst(dds, blind = TRUE)
+
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd)) %>% 
+  cbind(cmdscale(sampleDistMatrix)) 
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(tissue, treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+library(RColorBrewer)
+library(scales)
+
+# Define colors
+exposure_colors <- brewer.pal(6, "Oranges")  # Gradient for exposure levels
+recovery_colors <- c()  # Distinct colors for recovery
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment, shape = tissue)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2),
+               lwd = 0.25, col = "grey", show.legend = F) +
+  geom_point(size = 3, aes(x = c1, y = c2, fill = treatment)) +
+  geom_point(size = 1, aes(x = `1`, y = `2`, fill = treatment), show.legend = F) +
+  geom_point(size = 1, aes(x = `1`, y = `2`), show.legend = F) +
+  scale_color_manual(aesthetics = c("colour", "fill"), 
+                     values = c("#1b6e99","#FDAE6B","#FD8D3C","#E6550D","#A63603","#1b9e90","#1b6e01"), 
+                    name = "treatment", labels = c("Control","Hyp_2h","Hyp_6h","Hyp_5d","Hyp_6d","Recovery","Reox")) +
+  scale_shape_manual(values = c(21, 24), name = "ganglia", labels = c("abdominal", "pleural/pedal")) +
+  guides(shape = guide_legend(order = 1, override.aes = list(fill = "black"))) +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing.y = unit(0.2, "lines"))
+
+pcoa
+
+ggsave(filename = "gene_expression/figures/Pcoa_GE_Wild.png",pcoa, width = 4.5, height = 3.5)
 ```
 
 ```{r subset count data for TS analysis}
@@ -774,7 +833,10 @@ res_A <- DE %>%
                          "Reox.Hyp_T6h", "Reox.Control",
                          "Recovery.Hyp_T6h", "Recovery.Control")) %>%
   dplyr::select(.,contrast, gene, log2FoldChange)
-write_csv(res_A, file = "gene_expression/output/DE_wild/Abdominal/DE_sig_data.csv")
+write_csv(res_A %>%
+            left_join(AcTxAnot2 %>%
+                        dplyr::select(gene, Gene_names, Protein_names) %>%
+                        unique(), by = "gene"), file = "gene_expression/output/DE_wild/Abdominal/DE_sig_data.csv")
 
 res_Pp <- DE %>%
   unnest(sig) %>%
@@ -785,7 +847,10 @@ res_Pp <- DE %>%
                          "Reox.Hyp_T6h", "Reox.Control",
                          "Recovery.Hyp_T6h", "Recovery.Control")) %>%
   dplyr::select(.,contrast, gene, log2FoldChange)
-write_csv(res_A, file = "gene_expression/output/DE_wild/Pleural/DE_sig_data.csv")
+write_csv(res_Pp %>%
+            left_join(AcTxAnot2 %>%
+                        dplyr::select(gene, Gene_names, Protein_names)  %>%
+                        unique(), by = "gene"), file = "gene_expression/output/DE_wild/Pleural/DE_sig_data.csv")
 ```
 
 
@@ -794,43 +859,115 @@ DEGs_A <- DE %>%
   unnest(sig) %>%
   filter(tissue == "A") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  dplyr::select(.,contrast, gene)
+  dplyr::select(.,contrast, gene, log2FoldChange)
 DEGs_A_wide <- list(Hyp_T2h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control"),2]),
                  Hyp_T6h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control"),2]),
                  Hyp_T6d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_6.Control"),2]),
                  Hyp_T7d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_7.Control"),2]))
+DEGs_A_up <- list(Hyp_T2h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control" & DEGs_A$log2FoldChange > 0),2]),
+                 Hyp_T6h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control" & DEGs_A$log2FoldChange > 0),2]),
+                 Hyp_T6d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_6.Control" & DEGs_A$log2FoldChange > 0),2]),
+                 Hyp_T7d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_7.Control" & DEGs_A$log2FoldChange > 0),2]))
+DEGs_A_down <- list(Hyp_T2h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control" & DEGs_A$log2FoldChange < 0),2]),
+                 Hyp_T6h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control" & DEGs_A$log2FoldChange < 0),2]),
+                 Hyp_T6d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_6.Control" & DEGs_A$log2FoldChange < 0),2]),
+                 Hyp_T7d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_7.Control" & DEGs_A$log2FoldChange < 0),2]))
+
 str(DEGs_A_wide)
+gv1 <- ggvenn(DEGs_A_up, fill_color = c("#0073C2FF", "#0050C5", "#00C2FF", "#0032C2FF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv1
+
+A_up_OG <- intersect(intersect(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control" & DEGs_A$log2FoldChange > 0),]$gene,
+          DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control" & DEGs_A$log2FoldChange > 0),]$gene), intersect(
+          DEGs_A[which(DEGs_A$contrast=="LtH_6.Control" & DEGs_A$log2FoldChange > 0),]$gene,
+          DEGs_A[which(DEGs_A$contrast=="LtH_7.Control" & DEGs_A$log2FoldChange > 0),]$gene))
+
+A_down_OG <- intersect(intersect(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control" & DEGs_A$log2FoldChange < 0),]$gene,
+          DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control" & DEGs_A$log2FoldChange < 0),]$gene), intersect(
+          DEGs_A[which(DEGs_A$contrast=="LtH_6.Control" & DEGs_A$log2FoldChange < 0),]$gene,
+          DEGs_A[which(DEGs_A$contrast=="LtH_7.Control" & DEGs_A$log2FoldChange < 0),]$gene))
+
+df <- data.frame(gene = A_down_OG) %>%
+  left_join(AcTxAnot2, by = "gene")
+
+gv2 <- ggvenn(DEGs_A_down, fill_color = c("red", "#CD522CFF", "#CD521CFF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv2
+
 gv3 <- ggvenn(DEGs_A_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
   stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
   )
 gv3
+
 ggsave("gene_expression/output/DE_wild/Abdominal/DEGs_vennDiagram.png", gv3, height = 3, width = 5)
 
 DEGs_Pp <- DE %>%
   unnest(sig) %>%
   filter(tissue == "Pp") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  dplyr::select(.,contrast, gene)
+  dplyr::select(.,contrast, gene, log2FoldChange)
 DEGs_Pp_wide <- list(Hyp_T2h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T2h.Control"),2]),
                  Hyp_T6h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T6h.Control"),2]),
                  Hyp_T6d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_6.Control"),2]),
                  Hyp_T7d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_7.Control"),2]))
+DEGs_Pp_up <- list(Hyp_T2h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T2h.Control" & DEGs_Pp$log2FoldChange > 0),2]),
+                 Hyp_T6h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T6h.Control" & DEGs_Pp$log2FoldChange > 0),2]),
+                 Hyp_T6d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_6.Control" & DEGs_Pp$log2FoldChange > 0),2]),
+                 Hyp_T7d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_7.Control" & DEGs_Pp$log2FoldChange > 0),2]))
+DEGs_Pp_down <- list(Hyp_T2h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T2h.Control" & DEGs_Pp$log2FoldChange > 0),2]),
+                 Hyp_T6h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T6h.Control" & DEGs_Pp$log2FoldChange < 0),2]),
+                 Hyp_T6d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_6.Control" & DEGs_Pp$log2FoldChange < 0),2]),
+                 Hyp_T7d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_7.Control" & DEGs_Pp$log2FoldChange < 0),2]))
+
+
 str(DEGs_Pp_wide)
-gv2 <- ggvenn(DEGs_Pp_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+gv1 <- ggvenn(DEGs_Pp_up, fill_color = c("#0073C2FF", "#0050C5", "#00C2FF", "#0032C2FF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv1
+
+gv2 <- ggvenn(DEGs_Pp_down, fill_color = c("red", "#CD522CFF", "#CD521CFF", "#CD534CFF"),
   stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
   )
 gv2
+
+gv3 <- ggvenn(DEGs_Pp_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv3
 ggsave("gene_expression/output/DE_wild/Pleural/DEGs_vennDiagram.png", gv2, height = 3, width = 5)
 
 
 DEGs_wild <- DE %>%
   unnest(sig) %>%
+  dplyr::filter(tissue %in% c("A", "Pp")) %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
   filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
-  dplyr::select(.,contrast, gene, tissue)
-DEGs_wild_wide <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A"),2]),
-                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp"),2]))
+  dplyr::select(.,contrast, gene, tissue, log2FoldChange) %>%
+  group_by(gene, tissue) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE)
+    ) %>%
+  ungroup()
+
+DEGs_wild_wide <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A" ),1]),
+                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp"),1]))
+DEGs_wild_up <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A" & DEGs_wild$log2FoldChange > 0),1]),
+                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp" & DEGs_wild$log2FoldChange > 0),1]))
+DEGs_wild_down <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A" & DEGs_wild$log2FoldChange < 0),1]),
+                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp" & DEGs_wild$log2FoldChange < 0),1]))
 str(DEGs_wild_wide)
+gv1 <- ggvenn(DEGs_wild_up, fill_color = c("red", "#CD522CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv1
+gv2 <- ggvenn(DEGs_wild_down, fill_color = c("#0073C2FF", "#0050C5"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv2
 gv3 <- ggvenn(DEGs_wild_wide, fill_color = c("#0073C2FF", "#EFC000FF"),
   stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
   )
@@ -876,7 +1013,10 @@ volcano_plots_Pp$plots
 # Save all plots to files
 volcano_plots_Pp %>%
   mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_wild/Pleural/",.y, "_volcano.png"), plot = .x)))
+
+
 ```
+
 
 ## Clustering for temporal analysis
 
@@ -887,11 +1027,11 @@ DEGs_wild <- DE %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
   filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
   dplyr::select(.,contrast, gene, tissue, log2FoldChange) %>%
-  filter(abs(log2FoldChange) >= 0)
-DEGs_wild_wide <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A"),2]),
-                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp"),2]))
+  filter(abs(log2FoldChange) > 0)
+DEGs_wild_wide <- list(abdominal=unique(pull(DEGs_wild[which(DEGs_wild$tissue=="A"),2])),
+                 pleural=unique(pull(DEGs_wild[which(DEGs_wild$tissue=="Pp"),2])))
 
-cds <- DESeqDataSetFromMatrix(countMatrix, sdat, design = ~tissue.group)
+cds <- DESeqDataSetFromMatrix(countMatrix_W, sdat_W, design = ~treatment + tissue)
 cds <- cds[ rowMeans(counts(cds)) > 1, ]
 dds <- estimateSizeFactors(cds)
 normalized_counts <- counts(dds, normalized=TRUE)
@@ -900,8 +1040,8 @@ normalized_L2 <- log2(normalized_counts+1)
 
 # use all DEGs for temporal contrasts
 res_patterns_A <- DEGreport::degPatterns(
-  ma = normalized_L2[rownames(normalized_L2) %in% DEGs_wild_wide$abdominal, rownames(sdat)],
-  metadata = data.frame(time = sdat$treatment, row.names = rownames(sdat), Tissue = sdat$tissue),
+  ma = normalized_L2[rownames(normalized_L2) %in% DEGs_wild_wide$abdominal, rownames(sdat_W)],
+  metadata = data.frame(time = sdat_W$treatment, row.names = rownames(sdat_W), Tissue = sdat_W$tissue),
   reduce = TRUE,
   minc = 50,
   col = "Tissue",
@@ -910,12 +1050,11 @@ res_patterns_A <- DEGreport::degPatterns(
 
 res.A_clusters <- res_patterns_A$df
 res.A_patterns <- res_patterns_A$normalized
-save(res.A_clusters,res.A_patterns, file ="gene_expression/data/clusters_A.R")
 
 res_patterns_Pp <- DEGreport::degPatterns(
-  ma = normalized_L2[rownames(normalized_L2) %in% DEGs_wild_wide$pleural, rownames(sdat)],
-  metadata = data.frame(time = sdat$treatment, row.names = rownames(sdat),
-                        Tissue = sdat$tissue), 
+  ma = normalized_L2[rownames(normalized_L2) %in% DEGs_wild_wide$pleural, rownames(sdat_W)],
+  metadata = data.frame(time = sdat_W$treatment, row.names = rownames(sdat_W),
+                        Tissue = sdat_W$tissue), 
   reduce = TRUE,
   minc = 20,
   col = "Tissue",
@@ -923,16 +1062,13 @@ res_patterns_Pp <- DEGreport::degPatterns(
 
 res.Pp_clusters <- res_patterns_Pp$df
 res.Pp_patterns <- res_patterns_Pp$normalized
-save(res.Pp_clusters,res.Pp_patterns, file ="gene_expression/data/clusters_Pp.R")
 ```
 
 ###label clusters
 ```{r}
 
 library(ComplexHeatmap)
-
-#load("data/clusters_A.R")
-#load("data/clusters_Pp.R")
+library(circlize)
 
 ###A heatmap 
 A.norm <- res.A_patterns %>% 
@@ -988,6 +1124,8 @@ res.A_clusters <- res.A_clusters %>% mutate( direction =
 A_clusters <- split(res.A_clusters, f = res.A_clusters$clust)
 names(A_clusters) <- unique(res.A_clusters$clust)
 
+save(res.A_clusters,res.A_patterns, file ="gene_expression/data/clusters_A.R")
+
 ###Pp heatmap 
 Pp.norm <- res.Pp_patterns %>% 
   filter(.,Tissue == "Pp") %>%
@@ -1018,6 +1156,8 @@ res.Pp_clusters <- res.Pp_clusters %>% mutate( direction =
 Pp_clusters <- split(res.Pp_clusters, f = res.Pp_clusters$clust)
 names(Pp_clusters) <- unique(res.Pp_clusters$clust)
 
+save(res.Pp_clusters,res.Pp_patterns, file ="gene_expression/data/clusters_Pp.R")
+
 ```
 
 
@@ -1025,6 +1165,7 @@ names(Pp_clusters) <- unique(res.Pp_clusters$clust)
 ### heatmap for clusters 
 ```{r A heatmap,fig.width= 3.54, fig.height=8}
 
+load(file ="gene_expression/data/clusters_Pp.R")
 panel_fun = function(index) {
   pushViewport(viewport(xscale = c(1,8), yscale = c(-2, 2)))
   grid.rect()
@@ -1080,19 +1221,21 @@ ht.A.clusters <- Heatmap( matrix = A.norm[,2:8],
                             row_title_rot = 0,
                             #column_title = "Treatment",
          right_annotation = rowAnnotation(cluster = anno),
-         show_heatmap_legend = FALSE,
+         show_heatmap_legend = F,
          heatmap_legend_param = list(legend_direction = "horizontal", 
                                                     title_position = "topcenter"),
          heatmap_width = unit(8, "cm")
          )
 
+col_fun = colorRamp2(c(-2,0,2), c("blue", "white", "red"))
+lgd = Legend(col_fun = col_fun, title = "Scaled Expression", direction = "horizontal", title_position = "topcenter", legend_width = unit(4, "cm"))
+draw(lgd, x = unit(5, "cm"), y = unit(5, "cm"))
 # svg(filename = "../figures/A.clusters.svg", width = 3.625, height = 8)
-pdf(file = "gene_expression/figures/A.clusters.pdf", width = 4, height = 8)
+#pdf(file = "gene_expression/figures/A.clusters.pdf", width = 4, height = 8)
 draw(ht.A.clusters, heatmap_height = unit(19.5, "cm"), heatmap_legend_side = "bottom",  padding = unit(c(0, 0, 0, 0.5), "cm"))
-
 # decorate_row_title("scaled TPM",{
 #     grid.text("A", y = unit(1.8, "npc") , x = unit(0, "npc"), just = "left", gp = gpar(fontsize = 22)) })
-dev.off()
+#dev.off()
 
 
 ```
@@ -1212,6 +1355,65 @@ pheatmap(samplePoisDistMatrix,
          col = colors)
 
 # AC163A seems like an outlier in pca but groups with other control samples in correlation. I will maintain
+```
+
+### Principal Coordinates Analysis
+```{r pcoa, eval = TRUE}
+
+# Create full DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = countMatrix_L,
+                              colData = sdat_L,
+                              design = ~ treatment + tissue)
+### Remove genes counted less than 1
+dds <- dds[ rowMeans(counts(dds)) > 1, ]
+
+# Normalize expression data for visualization purposes using VST tranformation
+vsd <- vst(dds, blind = TRUE)
+
+## Calculate distances among samples
+sampleDists <- dist(t(assay(vsd)), method = "manhattan")
+sampleDistMatrix <- as.matrix(sampleDists)
+
+## Calculate MDS
+mds <- as.data.frame(colData(vsd)) %>% 
+  cbind(cmdscale(sampleDistMatrix)) 
+
+# Calculate group centroids for plotting
+mds <- mds %>%
+  group_by(tissue, treatment) %>%
+  dplyr::summarise(c1 = mean(`1`), c2 = mean(`2`)) %>%    
+  full_join(mds)
+
+# Calculate variance explained by each PC
+MDS <- cmdscale(sampleDistMatrix, eig = TRUE)
+vexpl <- round(MDS$eig*100/sum(MDS$eig),1)[1:2]
+
+library(RColorBrewer)
+library(scales)
+
+# Define colors
+exposure_colors <- brewer.pal(6, "Oranges")  # Gradient for exposure levels
+recovery_colors <- c()  # Distinct colors for recovery
+
+# Plot with spiders
+pcoa <- ggplot(mds, aes(color = treatment, shape = tissue)) +
+  geom_segment(mapping = aes(x = `1`, y = `2`, xend = c1, yend = c2),
+               lwd = 0.25, col = "grey", show.legend = F) +
+  geom_point(size = 3, aes(x = c1, y = c2, fill = treatment)) +
+  geom_point(size = 1, aes(x = `1`, y = `2`, fill = treatment), show.legend = F) +
+  geom_point(size = 1, aes(x = `1`, y = `2`), show.legend = F) +
+  scale_color_manual(aesthetics = c("colour", "fill"), 
+                     values = c("#1b6e99","#FDAE6B","#FD8D3C","#E6550D","#A63603","#1b9e90","#1b6e01"), 
+                    name = "treatment", labels = c("Control","Hyp_2h","Hyp_6h","Hyp_5d","Hyp_6d","Recovery","Reox")) +
+  scale_shape_manual(values = c(21, 24), name = "ganglia", labels = c("abdominal", "pleural/pedal")) +
+  guides(shape = guide_legend(order = 1, override.aes = list(fill = "black"))) +
+  labs(x = paste0("PC1 [", vexpl[1],"%]"), y = paste0("PC2 [", vexpl[2],"%]")) +
+  theme_custom() +
+  theme(legend.spacing.y = unit(0.2, "lines"))
+
+pcoa
+
+ggsave(filename = "gene_expression/figures/Pcoa_GE_lab.png",pcoa, width = 4.5, height = 3.5)
 ```
 
 ```{r subset count data for TS analysis Lab_cross}
@@ -1467,7 +1669,10 @@ res_A <- DE %>%
                          "Reox.Hyp_T6h", "Reox.Control",
                          "Recovery.Hyp_T6h", "Recovery.Control")) %>%
   dplyr::select(.,contrast, gene, log2FoldChange)
-write_csv(res_A, file = "gene_expression/output/DE_lab/Abdominal/DE_sig_data.csv")
+write_csv(res_A %>%
+            left_join(AcTxAnot2 %>%
+                        dplyr::select(gene, Gene_names, Protein_names) %>%
+                        unique(), by = "gene"), file = "gene_expression/output/DE_lab/Abdominal/DE_sig_data.csv")
 
 res_Pp <- DE %>%
   unnest(sig) %>%
@@ -1478,7 +1683,10 @@ res_Pp <- DE %>%
                          "Reox.Hyp_T6h", "Reox.Control",
                          "Recovery.Hyp_T6h", "Recovery.Control")) %>%
   dplyr::select(.,contrast, gene, log2FoldChange)
-write_csv(res_A, file = "gene_expression/output/DE_lab/Pleural/DE_sig_data.csv")
+write_csv(res_Pp %>%
+            left_join(AcTxAnot2 %>%
+                        dplyr::select(gene, Gene_names, Protein_names) %>%
+                        unique(), by = "gene"), file = "gene_expression/output/DE_lab/Pleural/DE_sig_data.csv")
 ```
 
 
@@ -1487,44 +1695,104 @@ DEGs_A <- DE %>%
   unnest(sig) %>%
   filter(tissue == "A") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  dplyr::select(.,contrast, gene)
+  dplyr::select(.,contrast, gene, log2FoldChange)
 DEGs_A_wide <- list(Hyp_T2h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control"),2]),
                  Hyp_T6h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control"),2]),
                  Hyp_T6d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_6.Control"),2]),
                  Hyp_T7d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_7.Control"),2]))
+DEGs_A_up <- list(Hyp_T2h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control" & DEGs_A$log2FoldChange > 0),2]),
+                 Hyp_T6h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control" & DEGs_A$log2FoldChange > 0),2]),
+                 Hyp_T6d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_6.Control" & DEGs_A$log2FoldChange > 0),2]),
+                 Hyp_T7d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_7.Control" & DEGs_A$log2FoldChange > 0),2]))
+DEGs_A_down <- list(Hyp_T2h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T2h.Control" & DEGs_A$log2FoldChange < 0),2]),
+                 Hyp_T6h=pull(DEGs_A[which(DEGs_A$contrast=="Hyp_T6h.Control" & DEGs_A$log2FoldChange < 0),2]),
+                 Hyp_T6d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_6.Control" & DEGs_A$log2FoldChange < 0),2]),
+                 Hyp_T7d=pull(DEGs_A[which(DEGs_A$contrast=="LtH_7.Control" & DEGs_A$log2FoldChange < 0),2]))
+
 str(DEGs_A_wide)
+gv1 <- ggvenn(DEGs_A_up, fill_color = c("#0073C2FF", "#0050C5", "#00C2FF", "#0032C2FF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv1
+
+
+gv2 <- ggvenn(DEGs_A_down, fill_color = c("red", "#CD522CFF", "#CD521CFF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv2
+
 gv3 <- ggvenn(DEGs_A_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
   stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
   )
 gv3
+
 ggsave("gene_expression/output/DE_lab/Abdominal/DEGs_vennDiagram.png", gv3, height = 3, width = 5)
 
 DEGs_Pp <- DE %>%
   unnest(sig) %>%
   filter(tissue == "Pp") %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
-  dplyr::select(.,contrast, gene)
+  dplyr::select(.,contrast, gene, log2FoldChange)
 DEGs_Pp_wide <- list(Hyp_T2h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T2h.Control"),2]),
                  Hyp_T6h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T6h.Control"),2]),
                  Hyp_T6d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_6.Control"),2]),
                  Hyp_T7d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_7.Control"),2]))
+DEGs_Pp_up <- list(Hyp_T2h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T2h.Control" & DEGs_Pp$log2FoldChange > 0),2]),
+                 Hyp_T6h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T6h.Control" & DEGs_Pp$log2FoldChange > 0),2]),
+                 Hyp_T6d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_6.Control" & DEGs_Pp$log2FoldChange > 0),2]),
+                 Hyp_T7d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_7.Control" & DEGs_Pp$log2FoldChange > 0),2]))
+DEGs_Pp_down <- list(Hyp_T2h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T2h.Control" & DEGs_Pp$log2FoldChange > 0),2]),
+                 Hyp_T6h=pull(DEGs_Pp[which(DEGs_Pp$contrast=="Hyp_T6h.Control" & DEGs_Pp$log2FoldChange < 0),2]),
+                 Hyp_T6d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_6.Control" & DEGs_Pp$log2FoldChange < 0),2]),
+                 Hyp_T7d=pull(DEGs_Pp[which(DEGs_Pp$contrast=="LtH_7.Control" & DEGs_Pp$log2FoldChange < 0),2]))
+
+
 str(DEGs_Pp_wide)
-gv2 <- ggvenn(DEGs_Pp_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+gv1 <- ggvenn(DEGs_Pp_up, fill_color = c("#0073C2FF", "#0050C5", "#00C2FF", "#0032C2FF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv1
+
+gv2 <- ggvenn(DEGs_Pp_down, fill_color = c("red", "#CD522CFF", "#CD521CFF", "#CD534CFF"),
   stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
   )
 gv2
+
+gv3 <- ggvenn(DEGs_Pp_wide, fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv3
 ggsave("gene_expression/output/DE_lab/Pleural/DEGs_vennDiagram.png", gv2, height = 3, width = 5)
 
 
-DEGs_wild <- DE %>%
+DEGs_lab <- DE %>%
   unnest(sig) %>%
+  dplyr::filter(tissue %in% c("A", "Pp")) %>%
   mutate(contrast = paste(num, den, sep = ".")) %>%
   filter(contrast %in% c("Hyp_T2h.Control", "Hyp_T6h.Control", "LtH_6.Control", "LtH_7.Control")) %>%
-  dplyr::select(.,contrast, gene, tissue)
-DEGs_wild_wide <- list(abdominal=pull(DEGs_wild[which(DEGs_wild$tissue=="A"),2]),
-                 pleural=pull(DEGs_wild[which(DEGs_wild$tissue=="Pp"),2]))
-str(DEGs_wild_wide)
-gv3 <- ggvenn(DEGs_wild_wide, fill_color = c("#0073C2FF", "#EFC000FF"),
+  dplyr::select(.,contrast, gene, tissue, log2FoldChange) %>%
+  group_by(gene, tissue) %>%
+  reframe(
+    log2FoldChange = mean(log2FoldChange, na.rm = TRUE)
+    ) %>%
+  ungroup()
+
+DEGs_lab_wide <- list(abdominal=pull(DEGs_lab[which(DEGs_lab$tissue=="A" ),1]),
+                 pleural=pull(DEGs_lab[which(DEGs_lab$tissue=="Pp"),1]))
+DEGs_lab_up <- list(abdominal=pull(DEGs_lab[which(DEGs_lab$tissue=="A" & DEGs_lab$log2FoldChange > 0),1]),
+                 pleural=pull(DEGs_lab[which(DEGs_lab$tissue=="Pp" & DEGs_lab$log2FoldChange > 0),1]))
+DEGs_lab_down <- list(abdominal=pull(DEGs_lab[which(DEGs_lab$tissue=="A" & DEGs_lab$log2FoldChange < 0),1]),
+                 pleural=pull(DEGs_lab[which(DEGs_lab$tissue=="Pp" & DEGs_lab$log2FoldChange < 0),1]))
+str(DEGs_lab_wide)
+gv1 <- ggvenn(DEGs_lab_up, fill_color = c("red", "#CD522CFF"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv1
+gv2 <- ggvenn(DEGs_lab_down, fill_color = c("#0073C2FF", "#0050C5"),
+  stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
+  )
+gv2
+gv3 <- ggvenn(DEGs_lab_wide, fill_color = c("#0073C2FF", "#EFC000FF"),
   stroke_size = 0.5, set_name_size = 4, show_percentage = F, stroke_color = F 
   )
 gv3
@@ -1548,7 +1816,7 @@ volcano_plots_A$plots
 
 # Save all plots to files
 volcano_plots_A %>%
-  mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_Lab/Abdominal/",.y, "_volcano.png"), plot = .x)))
+  mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_lab/Abdominal/",.y, "_volcano.png"), plot = .x)))
 
 volcano_plots_Pp <- DE %>%
   unnest(full) %>%
@@ -1568,7 +1836,9 @@ volcano_plots_Pp$plots
 
 # Save all plots to files
 volcano_plots_Pp %>%
-  mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_Lab/Pleural/",.y, "_volcano.png"), plot = .x)))
+  mutate(plot_paths = map2(plots, contrast, ~ ggsave(filename = paste0("gene_expression/output/DE_lab/Pleural/",.y, "_volcano.png"), plot = .x)))
+
+
 ```
 
 ## Clustering for temporal analysis
@@ -1603,7 +1873,6 @@ res_patterns_A <- DEGreport::degPatterns(
 
 res.A_clusters <- res_patterns_A$df
 res.A_patterns <- res_patterns_A$normalized
-save(res.A_clusters,res.A_patterns, file ="gene_expression/data/Lab_clusters_A.R")
 
 res_patterns_Pp <- DEGreport::degPatterns(
   ma = normalized_L2[rownames(normalized_L2) %in% DEGs_lab_wide$pleural, rownames(sdat_L)],
@@ -1616,7 +1885,6 @@ res_patterns_Pp <- DEGreport::degPatterns(
 
 res.Pp_clusters <- res_patterns_Pp$df
 res.Pp_patterns <- res_patterns_Pp$normalized
-save(res.Pp_clusters,res.Pp_patterns, file ="gene_expression/data/Lab_clusters_Pp.R")
 ```
 
 ###label clusters
@@ -1632,38 +1900,38 @@ A.norm <- res.A_patterns %>%
   filter(.,Tissue == "A") %>%
   dplyr::select(genes, time, value, cluster) %>% 
   tidyr::spread(time, value) %>% column_to_rownames("genes")
-A.norm[A.norm$cluster == 6,]$cluster <- "A1"
-A.norm[A.norm$cluster == 11,]$cluster <- "A2"
-A.norm[A.norm$cluster == 12,]$cluster <- "A3"
-A.norm[A.norm$cluster == 15,]$cluster <- "A7"
-A.norm[A.norm$cluster == 17,]$cluster <- "A8"
-A.norm[A.norm$cluster == 53,]$cluster <- "A9"
-A.norm[A.norm$cluster == 61,]$cluster <- "A4"
-A.norm[A.norm$cluster == 73,]$cluster <- "A10"
-A.norm[A.norm$cluster == 74,]$cluster <- "A5"
-A.norm[A.norm$cluster == 88,]$cluster <- "A6"
-A.norm[A.norm$cluster == 100,]$cluster <- "A11"
-A.norm[A.norm$cluster == 114,]$cluster <- "A12"
+A.norm[A.norm$cluster == 6,]$cluster <- "A7"
+A.norm[A.norm$cluster == 11,]$cluster <- "A8"
+A.norm[A.norm$cluster == 12,]$cluster <- "A9"
+A.norm[A.norm$cluster == 15,]$cluster <- "A1"
+A.norm[A.norm$cluster == 17,]$cluster <- "A2"
+A.norm[A.norm$cluster == 53,]$cluster <- "A3"
+A.norm[A.norm$cluster == 61,]$cluster <- "A10"
+A.norm[A.norm$cluster == 73,]$cluster <- "A4"
+A.norm[A.norm$cluster == 74,]$cluster <- "A11"
+A.norm[A.norm$cluster == 88,]$cluster <- "A12"
+A.norm[A.norm$cluster == 100,]$cluster <- "A5"
+A.norm[A.norm$cluster == 114,]$cluster <- "A6"
 A.norm <- A.norm[c(1:4,8,5:7)]
 
 # A1-A6 Up, A7-A9 Down 
 
 A_clust_UP <- c("A1","A2","A3","A4","A5","A6")
-A_clust_DOWN <- c("A7","A8","A9","A10","A11","A12","A13")
+A_clust_DOWN <- c("A7","A8","A9","A10","A11","A12")
 
 A_clust <- c(
-  "6" = "A1",
-  "11" = "A2",
-  "12" = "A3",
-  "15" = "A7",
-  "17" = "A8",
-  "53" = "A9",
-  "61" = "A4",
-  "73" = "A10",
-  "74" = "A5",
-  "88" = "A6",
-  "100" = "A11",
-  "114" = "A12"
+  "6" = "A7",
+  "11" = "A8",
+  "12" = "A9",
+  "15" = "A1",
+  "17" = "A2",
+  "53" = "A3",
+  "61" = "A10",
+  "73" = "A4",
+  "74" = "A11",
+  "88" = "A12",
+  "100" = "A5",
+  "114" = "A6"
   )
 
 res.A_patterns$clust <- factor(A_clust[as.character(res.A_patterns$cluster)], levels = c("A1","A2","A3","A4","A5",
@@ -1679,6 +1947,7 @@ res.A_clusters <- res.A_clusters %>% mutate( direction =
 A_clusters <- split(res.A_clusters, f = res.A_clusters$clust)
 names(A_clusters) <- unique(res.A_clusters$clust)
 
+save(res.A_clusters,res.A_patterns, file ="gene_expression/data/Lab_clusters_A.R")
 ###Pp heatmap 
 Pp.norm <- res.Pp_patterns %>% 
   filter(.,Tissue == "Pp") %>%
@@ -1709,6 +1978,7 @@ res.Pp_clusters <- res.Pp_clusters %>% mutate( direction =
 Pp_clusters <- split(res.Pp_clusters, f = res.Pp_clusters$clust)
 names(Pp_clusters) <- unique(res.Pp_clusters$clust)
 
+save(res.Pp_clusters,res.Pp_patterns, file ="gene_expression/data/Lab_clusters_Pp.R")
 ```
 
 
@@ -1852,12 +2122,12 @@ ht.Pp.clusters <- Heatmap( matrix = Pp.norm[,2:8],
          )
 
 # svg(filename = "../figures/Pp.clusters.svg", width = 3.625, height = 8)
-#pdf(file = "gene_expression/figures/Lab_Pp.clusters.pdf", width = 4, height = 5)
+pdf(file = "gene_expression/figures/Lab_Pp.clusters.pdf", width = 4, height = 5)
 draw(ht.Pp.clusters, heatmap_height = unit(7.5, "cm"), heatmap_legend_side = "bottom",  padding = unit(c(0, 0, 0, 0.5), "cm"))
 # decorate_row_title("scaled_TPM",{
 #     grid.text("B", y = unit(1.6, "npc") , x = unit(0, "npc"), just = "left", gp = gpar(fontsize = 22)) })
 
-#dev.off()
+dev.off()
 
 
 ```

@@ -171,10 +171,10 @@ df_int %>%
   summarise(n=n()) %>% 
   arrange(desc(n))
 
-df_int %>%
-  dplyr::filter(int == "Hypoxia_2h|Hypoxia_5d|Hypoxia_6d|Hypoxia_6h|Recovery|Reoxygenation") %>%
-  dplyr::select(gene) %>%
-  write.csv(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/genes_in_set.csv")
+#df_int %>%
+#  dplyr::filter(int == "Hypoxia_2h|Hypoxia_5d|Hypoxia_6d|Hypoxia_6h|Recovery|Reoxygenation") %>%
+ # dplyr::select(gene) %>%
+ # write.csv(file = "gene_expression/output/TS_output/LCvsWC_Abdominal/genes_in_set.csv")
 
 
 #calculate the intersection between the differentially expressed gene sets
@@ -205,13 +205,13 @@ max_set_size = max(sapply(m_list, set_size))
 max_comb_size = max(sapply(m_list, comb_size))
 
 top_ha = HeatmapAnnotation(
-    "up" = anno_barplot(comb_size(m_list[[3]]), 
+    "lab_up" = anno_barplot(comb_size(m_list[[3]]), 
         gp = gpar(fill = "#B31B21"), height = unit(2.5, "cm"), ylim = c(0,350)), 
-    "down" = anno_barplot(comb_size(m_list[[2]]), 
+    "lab_down" = anno_barplot(comb_size(m_list[[2]]), 
         gp = gpar(fill = "#1465AC"), height = unit(2.5, "cm"), ylim = c(0,350)), 
     "all" = anno_barplot(comb_size(m_list[[1]]), 
         gp = gpar(fill = "black"), height = unit(2.5, "cm"),ylim = c(0,350)),
-    gap = unit(1, "mm"), annotation_name_side = "left", annotation_name_rot = 90)
+    gap = unit(1, "mm"), annotation_name_side = "left", annotation_name_rot = 90, annotation_name_offset = unit(10, "mm"))
 
 # the same for using m2 or m3
 ht_A <- UpSet(m_list[[1]], top_annotation = top_ha, 
@@ -280,13 +280,13 @@ max_set_size = max(sapply(m_list, set_size))
 max_comb_size = max(sapply(m_list, comb_size))
 
 top_ha = HeatmapAnnotation(
-    "up" = anno_barplot(comb_size(m_list[[3]]), 
+    "lab_up" = anno_barplot(comb_size(m_list[[3]]), 
         gp = gpar(fill = "#B31B21"), height = unit(2.5, "cm"), ylim = c(0,350)), 
-    "down" = anno_barplot(comb_size(m_list[[2]]), 
+    "lab_down" = anno_barplot(comb_size(m_list[[2]]), 
         gp = gpar(fill = "#1465AC"), height = unit(2.5, "cm"), ylim = c(0,350)), 
     "all" = anno_barplot(comb_size(m_list[[1]]), 
         gp = gpar(fill = "black"), height = unit(2.5, "cm"),ylim = c(0,350)),
-    gap = unit(1, "mm"), annotation_name_side = "left", annotation_name_rot = 90)
+    gap = unit(1, "mm"), annotation_name_side = "left", annotation_name_rot = 90, annotation_name_offset = unit(10, "mm"))
 
 # the same for using m2 or m3
 ht_P <- UpSet(m_list[[1]], top_annotation = top_ha, 
@@ -334,8 +334,8 @@ hyp_DEGs_W <- W_extracted_de %>%
 df <- hyp_DEGs_L %>%
   left_join(hyp_DEGs_W, by = "gene") %>%
   mutate(Category = factor(ifelse(significance_Lab & significance_Wild, "Sig.Both",
-                 ifelse(significance_Lab, "Sig.Lab_Cross",
-                 ifelse(significance_Wild, "Sig.Wild_Cross", ""))), levels = c("Sig.Lab_Cross","Sig.Wild_Cross","Sig.Both"),
+                 ifelse(significance_Lab, "Sig.Naive",
+                 ifelse(significance_Wild, "Sig.Pre-exposed", ""))), levels = c("Sig.Naive","Sig.Pre-exposed","Sig.Both"),
                  ordered = T)) %>%
   na.omit() %>%
   left_join(AcTxAnot2[,c(7,15)], by = "gene") %>%
@@ -349,13 +349,13 @@ A_plot <- ggplot(df, aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
             size = 3, box.padding = 0.5, point.padding = unit(0.3, 
                 "lines"), max.overlaps = Inf) +
   scale_color_manual(aesthetics = c("fill", "color"),
-                     values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+                     values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
   labs(title = "Cross_HypoxiaDEGs (Abdominal)",
-    x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+    x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -369,6 +369,33 @@ A_plot <- ggplot(df, aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   guides(fill = guide_legend(override.aes = aes(label = "")));A_plot
 
 
+dr_genes <- df %>% filter((log2FC_Lab > 0 & log2FC_Wild < 0)|(log2FC_Lab < 0 & log2FC_Wild > 0)) %>%
+  left_join(annot_kegg, by = "gene") %>%
+  unique()
+  
+
+gene_list<-hyp_DEGs_L$gene
+
+gc_A <- list(down_in_Naive = df[df$log2FC_Lab < 0,]$gene,
+             up_in_Naive = df[df$log2FC_Lab > 0,]$gene)
+
+
+ck_A <- compareCluster(geneCluster = gc_A, 
+                       fun = enrichGO, 
+                       universe = names(gene_list),
+                       OrgDb = org.Acal.eg.db,
+                       keyType  = "SYMBOL",
+                       ont   = "ALL",
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.05,
+                       qvalueCutoff  = 0.05,
+                       readable = TRUE)
+
+head(ck_A) 
+
+dotplot_A <- dotplot(ck_A, showCategory = 10, label_format = 50);dotplot_A
+
+ggsave(plot = dotplot_A,filename = "gene_expression/figures/GO_clusters_Wild_vs_Lab.pdf",width = 6,height=6)
 
 L_extracted_de <- L_extracted_de %>%
   na.omit() %>%
@@ -392,8 +419,8 @@ df <- df %>%
     mutate(
     data = map(data, ~ .x %>%
                  mutate(Category = factor(ifelse(significance_Lab & significance_Wild, "Sig.Both",
-                 ifelse(significance_Lab, "Sig.Lab_Cross",
-                 ifelse(significance_Wild, "Sig.Wild_Cross", ""))), levels = c("Sig.Lab_Cross","Sig.Wild_Cross","Sig.Both"),
+                 ifelse(significance_Lab, "Sig.Naive",
+                 ifelse(significance_Wild, "Sig.Pre-exposed", ""))), levels = c("Sig.Naive","Sig.Pre-exposed","Sig.Both"),
                  ordered = T))
     )
     )
@@ -401,12 +428,12 @@ df <- df %>%
 # Plot for Hyp_2h
 A_2h <- ggplot(df[[2]][[1]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -421,12 +448,12 @@ A_2h <- ggplot(df[[2]][[1]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Catego
 # Plot for Hyp_6h
 A_6h <- ggplot(df[[2]][[2]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -441,12 +468,12 @@ A_6h <- ggplot(df[[2]][[2]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Catego
 # Plot for Hyp_5d
 A_5d <- ggplot(df[[2]][[3]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -461,12 +488,12 @@ A_5d <- ggplot(df[[2]][[3]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Catego
 # Plot for Hyp_6d
 A_6d <- ggplot(df[[2]][[4]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -481,12 +508,12 @@ A_6d <- ggplot(df[[2]][[4]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Catego
 # Plot for Recovery
 A_Reco <- ggplot(df[[2]][[5]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -501,12 +528,12 @@ A_Reco <- ggplot(df[[2]][[5]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Cate
 # Plot for Reox
 A_Reox <- ggplot(df[[2]][[8]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -545,8 +572,8 @@ hyp_DEGs_W <- W_extracted_de %>%
 df <- hyp_DEGs_L %>%
   left_join(hyp_DEGs_W, by = "gene") %>%
   mutate(Category = factor(ifelse(significance_Lab & significance_Wild, "Sig.Both",
-                 ifelse(significance_Lab, "Sig.Lab_Cross",
-                 ifelse(significance_Wild, "Sig.Wild_Cross", ""))), levels = c("Sig.Lab_Cross","Sig.Wild_Cross","Sig.Both"),
+                 ifelse(significance_Lab, "Sig.Naive",
+                 ifelse(significance_Wild, "Sig.Pre-exposed", ""))), levels = c("Sig.Naive","Sig.Pre-exposed","Sig.Both"),
                  ordered = T)) %>%
   na.omit() %>%
   left_join(AcTxAnot2[,c(7,15)], by = "gene") %>%
@@ -560,13 +587,13 @@ P_plot <- ggplot(df, aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
             size = 3, box.padding = 0.5, point.padding = unit(0.3, 
                 "lines"), max.overlaps = Inf) +
   scale_color_manual(aesthetics = c("fill", "color"),
-                     values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+                     values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
   labs(title = "Cross_HypoxiaDEGs (Pleural)",
-    x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+    x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -579,6 +606,30 @@ P_plot <- ggplot(df, aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_hline(yintercept = 0, linetype = "solid", color = "black") +
   guides(fill = guide_legend(override.aes = aes(label = "")));P_plot
 
+dr_genes <- df %>% filter((log2FC_Lab > 0 & log2FC_Wild < 0)|(log2FC_Lab < 0 & log2FC_Wild > 0))
+
+gene_list<-hyp_DEGs_L$gene
+
+gc_P <- list(down_in_Naive = df[df$log2FC_Lab < 0,]$gene,
+             up_in_Naive = df[df$log2FC_Lab > 0,]$gene)
+
+
+ck_P <- compareCluster(geneCluster = gc_P, 
+                       fun = enrichGO, 
+                       universe = names(gene_list),
+                       OrgDb = org.Acal.eg.db,
+                       keyType  = "SYMBOL",
+                       ont   = "ALL",
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.05,
+                       qvalueCutoff  = 0.05,
+                       readable = TRUE)
+
+head(ck_P) 
+
+dotplot_P <- dotplot(ck_P, showCategory = 10, label_format = 50);dotplot_P
+
+ggsave(plot = dotplot_P,filename = "gene_expression/figures/GO_clusters_Wild_vs_Lab_Pp.pdf",width = 6,height=6)
 
 L_extracted_de <- L_extracted_de %>%
   na.omit() %>%
@@ -602,8 +653,8 @@ df <- df %>%
     mutate(
     data = map(data, ~ .x %>%
                  mutate(Category = factor(ifelse(significance_Lab & significance_Wild, "Sig.Both",
-                 ifelse(significance_Lab, "Sig.Lab_Cross",
-                 ifelse(significance_Wild, "Sig.Wild_Cross", ""))), levels = c("Sig.Lab_Cross","Sig.Wild_Cross","Sig.Both"),
+                 ifelse(significance_Lab, "Sig.Naive",
+                 ifelse(significance_Wild, "Sig.Pre-exposed", ""))), levels = c("Sig.Naive","Sig.Pre-exposed","Sig.Both"),
                  ordered = T))
     )
     )
@@ -611,12 +662,12 @@ df <- df %>%
 # Plot for Hyp_2h
 p_2h <- ggplot(df[[2]][[1]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -631,12 +682,12 @@ p_2h <- ggplot(df[[2]][[1]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Catego
 # Plot for Hyp_6h
 p_6h <- ggplot(df[[2]][[2]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -651,12 +702,12 @@ p_6h <- ggplot(df[[2]][[2]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Catego
 # Plot for Hyp_5d
 p_5d <- ggplot(df[[2]][[3]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -671,12 +722,16 @@ p_5d <- ggplot(df[[2]][[3]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Catego
 # Plot for Hyp_6d
 p_6d <- ggplot(df[[2]][[4]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+    geom_label_repel(data = df[[2]][[4]] %>% filter((log2FC_Lab > 1 & log2FC_Wild < -1)|(log2FC_Lab < -1 & log2FC_Wild > 1)), 
+                  aes(label = Gene_names, fill = Category, segment.color = "black"), color = "white", ,
+            size = 3, box.padding = 0.5, point.padding = unit(0.3, 
+                "lines"), max.overlaps = Inf) +
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -691,12 +746,12 @@ p_6d <- ggplot(df[[2]][[4]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Catego
 # Plot for Recovery
 p_Reco <- ggplot(df[[2]][[5]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -711,12 +766,12 @@ p_Reco <- ggplot(df[[2]][[5]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Cate
 # Plot for Reox
 p_Reox <- ggplot(df[[2]][[8]], aes(x = log2FC_Wild, y = log2FC_Lab, color = Category)) +
   geom_point(alpha = 0.7, size = 1.5, shape = 1) +
-  scale_color_manual(values = c("Sig.Both" = "grey", 
-                                "Sig.Lab_Cross" = "darkred", 
-                                "Sig.Wild_Cross" = "blue"),
+  scale_color_manual(values = c("Sig.Both" = "black", 
+                                "Sig.Naive" = "darkred", 
+                                "Sig.Pre-exposed" = "blue"),
                                 na.value = NA) +
-  labs(x = "log[2]FC - Wild_Cross",
-    y = "log[2]FC - Lab_Cross",
+  labs(x = "log[2]FC - Pre-exposed",
+    y = "log[2]FC - Naive",
     color = NULL
   ) +
   theme_bw() +
@@ -784,8 +839,8 @@ merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
                                               Reco=df_T6)))
 
 ## Set up/downregulation
-merged.res$type = "upregulated"
-merged.res$type[merged.res$NES < 0] = "downregulated"
+merged.res$type = "upregulated in lab-cross"
+merged.res$type[merged.res$NES < 0] = "downregulated in lab-cross"
 
 target_ancestors <- c("GO:0001666","GO:0071456","GO:0002250","GO:0002376","GO:0002283","GO:0002252",
                       "GO:0002684","GO:0008152","GO:0030324","GO:0042990","GO:0006950",
@@ -878,7 +933,7 @@ GOs_ancestors_clust$Description <- factor(GOs_ancestors_clust$Description, level
 
 plt <-ggplot(GOs_ancestors_clust, aes(x = Cluster, y = Description, color=ancestor_name, shape=type)) +
     geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
-    scale_shape_manual(values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated'))
+    scale_shape_manual(values=c("\u25B2","\u25BC"),breaks = c('upregulated in lab-cross','downregulated in lab-cross'))
 if(length(unique(GOs_ancestors_clust$setSize))>1){
     plt<-plt+    scale_size(name   = "term size",
                             range = c(5,15))
@@ -923,14 +978,14 @@ GO_reduced <- merged.res[merged.res$ONTOLOGY == "BP",] %>%
   dplyr::arrange(-cluster, )
 
 GO_reduced$parentTerm <- factor(GO_reduced$parentTerm, levels = unique(GO_reduced$parentTerm), ordered = T)
-GO_reduced$type = "upregulated"
-GO_reduced$type[GO_reduced$NES < 0] = "downregulated"
+GO_reduced$type = "upregulated in lab-cross"
+GO_reduced$type[GO_reduced$NES < 0] = "downregulated in lab-cross"
 
 num_cols<-length(unique(GO_reduced$Cluster))
 plt1 <-ggplot(GO_reduced, aes(x = Cluster, y = parentTerm, color=type, shape=type)) +
     geom_point(aes(size=GeneRatio,shape=type),show.legend = TRUE) +
-    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
-    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated in lab-cross','downregulated in lab-cross')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated in lab-cross','downregulated in lab-cross'), values = c("#B31B21", "#1465AC")) 
                       
 if(length(unique(GO_reduced$GeneRatio))>1){
     plt1<-plt1+    scale_size(name   = "geneRatio",
@@ -956,7 +1011,7 @@ plt1
 
 #pdf.options(encoding=)
 #ggsave(filename = "gene_expression/figures/FigSn_Reduced_GOBP_Abdominal.pdf", plt1, width = 15, height = 14)
-cairo_pdf("gene_expression/figures/FigSn_Reduced_GOBP_Abdominal.pdf", width = 15, height = 10)
+cairo_pdf("gene_expression/figures/FigSn_Reduced_GOBP_Abdominal.pdf", width = 13, height = 10)
 plt1
 dev.off()
 ```
@@ -999,8 +1054,8 @@ merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0[1:10,],
 
 
 ## Set up/downregulation
-merged.res$type = "upregulated"
-merged.res$type[merged.res$NES < 0] = "downregulated"
+merged.res$type = "upregulated in lab-cross"
+merged.res$type[merged.res$NES < 0] = "downregulated in lab-cross"
 
 merged.res<-merged.res[merged.res$qvalue < 0.05,]
 
@@ -1010,8 +1065,8 @@ merged.res <- merged.res %>%
 num_cols<-length(unique(merged.res$Cluster))
 plt <-ggplot(merged.res, aes(x = Cluster, y = Description, color=type, shape=type)) +
     geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
-    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
-    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated in lab-cross','downregulated in lab-cross')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated in lab-cross','downregulated in lab-cross'), values = c("#B31B21", "#1465AC"))
                       
 if(length(unique(merged.res$setSize))>1){
     plt<-plt+    scale_size(name   = "term size",
@@ -1034,7 +1089,9 @@ plt<-plt+
 
 plt
 ggsave(filename = "gene_expression/figures/FigSn_KEGGenrichment_Abdominal.png", plt, width = 12, height = 8)
-
+cairo_pdf("gene_expression/figures/FigSn_KEGGenrichment_Abdominal.pdf", width = 12.5, height = 8)
+plt
+dev.off()
 
 
 ```
@@ -1076,8 +1133,8 @@ merged.res <- as.data.frame(merge_result(list(Ctrol=df_T0,
                                               Reco=df_T6)))
 
 ## Set up/downregulation
-merged.res$type = "upregulated"
-merged.res$type[merged.res$NES < 0] = "downregulated"
+merged.res$type = "upregulated in lab-cross"
+merged.res$type[merged.res$NES < 0] = "downregulated in lab-cross"
 
 merged.res<-merged.res[merged.res$qvalue < 0.05,]
 
@@ -1087,8 +1144,8 @@ merged.res <- merged.res %>%
 num_cols<-length(unique(merged.res$Cluster))
 plt <-ggplot(merged.res, aes(x = Cluster, y = Description, color=type, shape=type)) +
     geom_point(aes(size=setSize,shape=type),show.legend = TRUE) +
-    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated','downregulated')) +
-    scale_color_manual(name = "direction",breaks = c('upregulated','downregulated'), values = c("#B31B21", "#1465AC"))
+    scale_shape_manual(name = "direction", values=c("\u25B2","\u25BC"),breaks = c('upregulated in lab-cross','downregulated in lab-cross')) +
+    scale_color_manual(name = "direction",breaks = c('upregulated in lab-cross','downregulated in lab-cross'), values = c("#B31B21", "#1465AC"))
                       
 if(length(unique(merged.res$setSize))>1){
     plt<-plt+    scale_size(name   = "term size",
@@ -1111,6 +1168,9 @@ plt<-plt+
 
 plt
 ggsave(filename = "gene_expression/figures/FigSn_MKEGGenrichment_Abdominal.png", plt, width = 12, height = 5)
+cairo_pdf("gene_expression/figures/FigSn_MKEGGenrichment_Abdominal.pdf", width = 12.5, height = 5)
+plt
+dev.off()
 ```
 
 ##WIKIPathway abdominal
